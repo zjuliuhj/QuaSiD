@@ -1,0 +1,61 @@
+model:
+  target: models.pacodi.pacodi_sde.PaCoDi_sde
+  params:
+    seq_length: 24
+    channels: 1
+    condition_dim: 128
+    condition_domain: embedding
+    max_step: 1000
+    sampling_steps: 200
+    cfg_scale: 2.5
+    beta_min: 0.1
+    beta_max: 20.0
+    freq_keep_ratio: 1.0
+    backbone: dit_solver_v5
+    use_pmi_corr: true
+    use_loss_weight: false
+    inst_norm: false
+    emb_size: 256
+    corr_rank: 64
+    patch_size: 1
+    num_layers: 4
+
+solver:
+  base_lr: 1.0e-04
+  train_steps: 15000
+  mixed_precision: bf16
+  grad_accum_every: 2
+  ckpt_count: 3
+  save_cycle: 5000
+  ema:
+    decay: 0.995
+    update_interval: 10
+  scheduler:
+    target: engine.lr_sch.ReduceLROnPlateauWithWarmup
+    params:
+      factor: 0.5
+      patience: 3000
+      min_lr: 1.0e-05
+      threshold: 0.01
+      threshold_mode: rel
+      warmup_lr: 0.0008
+      warmup: 500
+      verbose: false
+
+dataloader:
+  dataset:
+    target: data.dataset_utils.conditional_dataset.ConditionalDataset
+    params:
+      name: embedding_cleaned_traffic_24
+      train_test_prop: 0.9
+      data_root: ./data/datasets/TSFragment-600K
+      window: 24
+      seed: 123
+      normalization: minmax
+  batch_size: 128
+  sample_size: 256
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  shuffle: true

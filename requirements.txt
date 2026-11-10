@@ -1,0 +1,13 @@
+# Direct runtime dependencies; install a PyTorch build suited to your machine.
+torch>=2.4,<3
+numpy>=1.23,<2
+pandas>=1.5,<3
+scipy>=1.8,<2
+scikit-learn>=1.1,<2
+matplotlib>=3.6,<4
+PyYAML>=6,<7
+tqdm>=4.64,<5
+tensorboard>=2.10,<3
+
+# Test runner for the bundled tests.
+pytest>=8,<10

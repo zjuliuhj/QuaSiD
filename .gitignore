@@ -1,0 +1,43 @@
+# Python / environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+# Datasets and generated artifacts
+/data/datasets/*
+/experiments/
+/logs/
+/outputs/
+/OUTPUT/
+*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.parquet
+*.zip
+# Local settings and credentials
+.env
+.env.*
+.idea/
+.vscode/
+.DS_Store
+
+# Benchmark datasets intentionally included in this repository.
+!/data/datasets/Quito.npy
+!/data/datasets/air.npy
+!/data/datasets/be.npy
+!/data/datasets/de.npy
+!/data/datasets/etth1.npy
+!/data/datasets/etth2.npy
+!/data/datasets/ettm1.npy
+!/data/datasets/ettm2.npy
+!/data/datasets/exchange.npy
+!/data/datasets/stocks.npy
+!/data/datasets/weather.npy
