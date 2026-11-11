@@ -1,5 +1,5 @@
 model:
-  target: models.quasid.quasid_sde.QuaSiD_sde
+  target: models.quasid.quasid_cont.QuaSiD_cont
   params:
     seq_length: 224
     channels: 6

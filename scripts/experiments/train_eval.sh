@@ -28,20 +28,20 @@ esac
 
 if [[ -z "${MODEL_NAME}" ]]; then
   case "${MODE}" in
-    uncond|cond) MODEL_NAME=quasid_sde ;;
-    forecast) MODEL_NAME=quasid_sde ;;
+    uncond|cond) MODEL_NAME=quasid_cont ;;
+    forecast) MODEL_NAME=quasid_cont ;;
   esac
 fi
 
 case "${MODEL_NAME}" in
-  quasid_sde)
-    MODEL_TARGET=models.quasid.quasid_sde.QuaSiD_sde
+  quasid_cont)
+    MODEL_TARGET=models.quasid.quasid_cont.QuaSiD_cont
     ;;
-  quasid_ddpm)
-    MODEL_TARGET=models.quasid.quasid_ddpm.QuaSiD_ddpm
+  quasid_disc)
+    MODEL_TARGET=models.quasid.quasid_disc.QuaSiD_disc
     ;;
   *)
-    echo "MODEL_NAME must be quasid_sde or quasid_ddpm. Got ${MODEL_NAME}" >&2
+    echo "MODEL_NAME must be quasid_cont or quasid_disc. Got ${MODEL_NAME}" >&2
     exit 1
     ;;
 esac

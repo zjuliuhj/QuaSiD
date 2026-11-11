@@ -48,8 +48,8 @@ models/quasid/dit_blocks.py
 models/quasid/dit_common.py
 models/quasid/dit_solver_v5.py
 models/quasid/quasid.py
-models/quasid/quasid_ddpm.py
-models/quasid/quasid_sde.py
+models/quasid/quasid_disc.py
+models/quasid/quasid_cont.py
 models/ts2vec/models/dilated_conv.py
 models/ts2vec/models/encoder.py
 models/ts2vec/models/losses.py

@@ -28,6 +28,7 @@ METADATA_COLUMNS = {
     "channels",
     "backbone",
     "use_pmi_corr",
+    "pmi_mode",
     "inst_norm",
     "normalization",
     "freq_keep_ratio",

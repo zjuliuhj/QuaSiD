@@ -18,7 +18,7 @@ def main():
     base = yaml.safe_load((ROOT / 'config/unconditional/sines.yaml').read_text())
     with tempfile.TemporaryDirectory(prefix='quasid-v5-smoke-') as tmp:
         work = Path(tmp)
-        for wrapper in ('sde', 'ddpm'):
+        for wrapper in ('cont', 'disc'):
             config = copy.deepcopy(base)
             config['model']['target'] = f'models.quasid.quasid_{wrapper}.QuaSiD_{wrapper}'
             config['model']['params'].update(

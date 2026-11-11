@@ -6,7 +6,7 @@ from tqdm.auto import tqdm
 from models.quasid.quasid import QuaSiD
 
 
-class QuaSiD_sde(QuaSiD):
+class QuaSiD_cont(QuaSiD):
     """Continuous-time VP-SDE QuaSiD variant.
 
     Uses the shared QuaSiD frequency-domain interface and owns only the

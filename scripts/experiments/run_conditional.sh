@@ -9,7 +9,7 @@ cd "${PROJECT_ROOT}"
 
 DATASETS=${DATASETS:-"air electricity ettm1"}
 SEQ_LENGTHS=${SEQ_LENGTHS:-"24 48 96"}
-MODEL_NAME=${MODEL_NAME:-"quasid_sde quasid_ddpm"}
+MODEL_NAME=${MODEL_NAME:-"quasid_cont quasid_disc"}
 BACKBONE=${BACKBONE:-dit_solver_v5}
 USE_PMI_CORR=${USE_PMI_CORR:-true}
 RUN_TRAIN=${RUN_TRAIN:-true}
@@ -43,9 +43,9 @@ for dataset in ${DATASETS}; do
     task_backbone=${BACKBONE}
     task_use_pmi_corr=${USE_PMI_CORR}
     case "${model_name}" in
-      quasid_sde|quasid_ddpm) ;;
+      quasid_cont|quasid_disc) ;;
       *)
-        echo "MODEL_NAME entries must be quasid_sde or quasid_ddpm. Got ${model_name}" >&2
+        echo "MODEL_NAME entries must be quasid_cont or quasid_disc. Got ${model_name}" >&2
         exit 1
         ;;
     esac

@@ -305,7 +305,7 @@ class QuaSiD(nn.Module, InstNormMixin):
         return (1.0 + gamma_r) * x_r + beta_r, (1.0 + gamma_i) * x_i + beta_i
 
     def _run_backbone(self, x_r, x_i, t, condition, noise_scale, stats):
-        """Return V5 epsilon predictions with blockwise PMI fusion."""
+        """Return epsilon predictions with the configured backbone-owned PMI fusion."""
         return self.model(
             x_r, x_i, t, condition=condition, noise_scale=noise_scale,
             spectral_variance=(stats["var_r"], stats["var_i"]),

@@ -13,11 +13,11 @@ cd /ossfs/workspace/QuaSiD
 source /usr/local/PPU_SDK/envsetup.sh
 CUDA_VISIBLE_DEVICES="${QUASID_DEVICE:?请先设置一张空闲设备编号}" \
   /opt/conda/bin/conda run -n base --no-capture-output python main.py \
-  --train --mode uncond --model_name quasid_sde \
+  --train --mode uncond --model_name quasid_cont \
   --config_file config/unconditional/stocks.yaml --name stocks_v5 --tensorboard
 ```
 
-实时事件位于 `/tmp/quasid-tensorboard/stocks_v5-<唯一后缀>/`，正常结束后归档至 `experiments/uncond/quasid_sde/stocks/stocks_v5/log/logs/`。两卡 DDP 启动方式见 [开发工作流](AI_STUDIO_DEVELOPMENT_WORKFLOW.md)。`scripts/experiments/train_eval.sh` 默认 `TENSORBOARD=true`，通过 `TENSORBOARD=false` 关闭。
+实时事件位于 `/tmp/quasid-tensorboard/stocks_v5-<唯一后缀>/`，正常结束后归档至 `experiments/uncond/quasid_cont/stocks/stocks_v5/log/logs/`。两卡 DDP 启动方式见 [开发工作流](AI_STUDIO_DEVELOPMENT_WORKFLOW.md)。`scripts/experiments/train_eval.sh` 默认 `TENSORBOARD=true`，通过 `TENSORBOARD=false` 关闭。
 
 ## 指标与输出
 

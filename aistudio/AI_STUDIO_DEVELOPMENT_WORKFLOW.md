@@ -13,7 +13,7 @@
 | 本地检查与同步环境 | `conda run -n rycai python` |
 | 服务器 Python 约定 | `/opt/conda/bin/conda run -n base --no-capture-output python`，运行前确认环境与依赖 |
 | PPU 环境 | 在使用 PPU 的远端 shell 中加载 `/usr/local/PPU_SDK/envsetup.sh` |
-| 模型 | `quasid_sde`、`quasid_ddpm`，骨干为 `dit_solver_v5` |
+| 模型 | `quasid_cont`、`quasid_disc`，骨干为 `dit_solver_v5` |
 | 任务 | `uncond`、`cond`、`forecast` |
 | 运行产物 | `experiments/<mode>/<model_name>/<dataset>/<experiment>/` |
 
@@ -62,13 +62,13 @@ source /usr/local/PPU_SDK/envsetup.sh
 CUDA_VISIBLE_DEVICES="${QUASID_DEVICES:?请先设置两张空闲设备编号}" \
   /opt/conda/bin/conda run -n base --no-capture-output python -m torch.distributed.run \
   --standalone --nproc_per_node=2 main.py --train --mode uncond \
-  --model_name quasid_sde --config_file config/unconditional/stocks.yaml \
+  --model_name quasid_cont --config_file config/unconditional/stocks.yaml \
   --name stocks_v5 --tensorboard
 ```
 
 两卡训练不传 `--gpu`。当前 `main.py` 仅支持单进程 checkpoint 评估：用普通 Python 启动，省略 `--train`，通过 `--milestone` 选择 checkpoint，并保留训练时的模型与配置覆盖。`scripts/experiments/train_eval.sh` 和 GPU 队列按单卡任务运行，不能通过设置 `NPROC_PER_NODE` 将它们切换为 DDP；队列的空闲设备探测依赖 `nvidia-smi`。
 
-`--model_name` 控制输出路径，`model.target` 选择模型实现。改为 DDPM 时同时设置 `--model_name quasid_ddpm` 和尾部覆盖 `model.target models.quasid.quasid_ddpm.QuaSiD_ddpm`。训练精度由 `solver.mixed_precision` 控制。算子、flash SDPA 和 PPU 的兼容性以实际服务器检查为准；仅识别到设备不代表环境完整。
+`--model_name` 控制输出路径，`model.target` 选择模型实现。改为 DDPM 时同时设置 `--model_name quasid_disc` 和尾部覆盖 `model.target models.quasid.quasid_disc.QuaSiD_disc`。训练精度由 `solver.mixed_precision` 控制。算子、flash SDPA 和 PPU 的兼容性以实际服务器检查为准；仅识别到设备不代表环境完整。
 
 ## Git 与报告
 

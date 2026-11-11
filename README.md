@@ -11,10 +11,41 @@ All model code lives in [models/quasid/](models/quasid/). The public model ident
 
 | Diffusion wrapper | Model identifier | YAML `model.target` |
 | --- | --- | --- |
-| Continuous VP-SDE | `quasid_sde` | `models.quasid.quasid_sde.QuaSiD_sde` |
-| Discrete DDPM | `quasid_ddpm` | `models.quasid.quasid_ddpm.QuaSiD_ddpm` |
+| Continuous VP-SDE | `quasid_cont` | `models.quasid.quasid_cont.QuaSiD_cont` |
+| Discrete DDPM | `quasid_disc` | `models.quasid.quasid_disc.QuaSiD_disc` |
 
 [quasid.py](models/quasid/quasid.py) provides the shared `QuaSiD` base class, condition encoder, orthonormal rFFT transforms, spectral noise covariance, and noise-prediction loss. The [QuaSiD backbone](models/quasid/dit_solver_v5.py) implements the separate real and imaginary DiT streams; [dit_blocks.py](models/quasid/dit_blocks.py) contains their shared quadrature PMI correction. The SDE wrapper uses Euler–Maruyama reverse sampling, and the DDPM wrapper uses DDIM/generalized jump sampling.
+
+### PMI placement ablation
+
+Set `model.params.pmi_mode` to select where PMI enters the prediction:
+
+| Mode | PMI input | Fusion | PMI blocks |
+| --- | --- | --- | --- |
+| `blockwise` (default) | Each layer's even/odd hidden states | Inside every DiT layer | `num_layers` |
+| `independent` | Even/odd input spectra, before the DiT projections | Once, after the two output heads | 1 |
+
+The independent network reuses `SharedQuadraturePMIBlock` unchanged: two shared
+frequency encoders, six time/condition modulation vectors, and two linear decoders.
+Its inputs and trainable parameters are independent of the DiT hidden-state paths.
+The fixed sinusoidal time embedding and external condition context are shared.
+Both modes retain zero-initialized PMI modulation and the imaginary DC/Nyquist mask.
+Independent fusion uses `epsilon = epsilon_backbone - noise_scale * variance * score_pmi`
+in each branch. Setting `use_pmi_corr=false` disables PMI in either mode.
+
+For the EEG length-256 ablation, reuse the existing training configuration and
+select a distinct experiment name:
+
+```bash
+python main.py --train --mode uncond --model_name quasid_cont \
+  --config_file config/unconditional/eeg.yaml --name eeg_seq256_pmi_independent \
+  --seed 12345 --tensorboard model.params.pmi_mode independent
+```
+
+Pass the same `model.params.pmi_mode independent` override when evaluating its
+checkpoints. Metrics record `pmi_mode`. With five DiT layers this changes five PMI
+blocks to one, so it compares placement and capacity together; it is not a
+parameter-matched experiment. Train a fresh checkpoint for the independent mode.
 
 ## Installation
 
@@ -131,10 +162,10 @@ is a complete example with no external data:
 
 ```bash
 python main.py --train --name sines_quasid --mode uncond \
-  --config_file config/unconditional/sines.yaml --model_name quasid_sde
+  --config_file config/unconditional/sines.yaml --model_name quasid_cont
 
 python main.py --name sines_quasid --mode uncond \
-  --config_file config/unconditional/sines.yaml --model_name quasid_sde \
+  --config_file config/unconditional/sines.yaml --model_name quasid_cont \
   --milestone 10 --seed 2021
 ```
 
@@ -149,7 +180,7 @@ Options after the standard flags are YAML overrides in `key value` pairs:
 
 ```bash
 python main.py --train --name Quito_quasid --mode uncond \
-  --config_file config/unconditional/Quito.yaml --model_name quasid_sde \
+  --config_file config/unconditional/Quito.yaml --model_name quasid_cont \
   model.params.seq_length 128 dataloader.dataset.params.window 128
 
 # Conditional generation requires the embedding CSV described above.
@@ -166,7 +197,7 @@ MODE=forecast DATASET=etth1 RUN_EVAL=false \
 The shell launchers set both the model identifier and configuration target from `MODEL_NAME`. For example:
 
 ```bash
-MODE=uncond DATASET=sines MODEL_NAME=quasid_ddpm RUN_EVAL=false \
+MODE=uncond DATASET=sines MODEL_NAME=quasid_disc RUN_EVAL=false \
   bash scripts/experiments/train_eval.sh
 ```
 
@@ -174,8 +205,8 @@ In `main.py`, `--model_name` controls output directory naming, while `model.targ
 
 ```bash
 python main.py --train --name sines_quasid --mode uncond \
-  --config_file config/unconditional/sines.yaml --model_name quasid_ddpm \
-  model.target models.quasid.quasid_ddpm.QuaSiD_ddpm
+  --config_file config/unconditional/sines.yaml --model_name quasid_disc \
+  model.target models.quasid.quasid_disc.QuaSiD_disc
 ```
 
 Use the same target override when evaluating that DDPM checkpoint.
@@ -198,7 +229,7 @@ DRY_RUN=true DATASETS=Quito GPU_IDS=0 \
   bash scripts/experiments/run_unconditional.sh
 
 # Train one QuaSiD configuration and evaluate every saved checkpoint.
-DATASETS=Quito SEQ_LENGTHS=128 MODEL_NAME=quasid_sde GPU_IDS=0 \
+DATASETS=Quito SEQ_LENGTHS=128 MODEL_NAME=quasid_cont GPU_IDS=0 \
   bash scripts/experiments/run_unconditional.sh
 
 # Forecasting and conditional queues.
@@ -213,7 +244,7 @@ according to `GPU_MAX_MEMORY_USED_MB` and `GPU_MAX_UTILIZATION`.
 
 Useful settings include `DATASETS`, `SEQ_LENGTHS`, `MODEL_NAME`, `RUN_TRAIN`,
 `RUN_EVAL`, `EVAL_ALL_CHECKPOINTS`, `MILESTONE`, `EVAL_SEEDS`, and `LOG_ROOT`.
-The supported model names are `quasid_sde` and `quasid_ddpm`. Keep `BACKBONE` at its bundled default.
+The supported model names are `quasid_cont` and `quasid_disc`. Keep `BACKBONE` at its bundled default.
 
 For a saved unconditional run, reproduce its original training overrides and use
 `RUN_TRAIN=false` with the same `EXP_NAME` in `train_eval.sh`.
@@ -250,11 +281,11 @@ For SSH setup, reuse in future projects, and authentication troubleshooting, see
 
 This repository contains the QuaSiD model, training and evaluation code, task configurations, and the 11 NPY datasets listed above. Checkpoints, logs, and local authentication credentials are excluded.
 
-Validation after the QuaSiD naming update passed:
+Historical validation of the blockwise-only release included:
 
 - All 41 tests covering the QuaSiD backbone, diffusion wrappers, EMA, sine loader, and conditional metric scaling.
-- CPU training, finite checkpoint checks, EMA reload, and sampling for both `quasid_sde` and `quasid_ddpm`.
+- CPU training, finite checkpoint checks, EMA reload, and sampling for both diffusion wrappers.
 - Schema validation and model-target imports for all 25 YAML configurations.
 - Shell syntax checks for the experiment launchers.
 
-These checks ran in the existing `rycai` conda environment with Python 3.11.15, PyTorch 2.12.1, and NumPy 2.4.6. That environment's NumPy version is outside the installation range in `requirements.txt`; this run validates the existing environment and does not validate a fresh dependency installation or full benchmark retraining. Run the quick-check commands in your target environment before launching experiments.
+These historical checks ran in the existing `rycai` conda environment with Python 3.11.15, PyTorch 2.12.1, and NumPy 2.4.6. That environment's NumPy version is outside the installation range in `requirements.txt`. They do not validate the independent-PMI ablation or a fresh dependency installation. The focused checks for both PMI modes and the renamed wrappers are in `tests/test_quasid_v5.py`; run them in the target environment before launching experiments.

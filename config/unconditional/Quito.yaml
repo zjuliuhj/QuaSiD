@@ -2,7 +2,7 @@
 # Raw float32 shape: (15356, 5); columns: ind_1, ind_2, ind_3, ind_4, ind_5.
 # Source: test_hour-00001-of-00001.parquet; normalization is applied by the loader.
 model:
-  target: models.quasid.quasid_sde.QuaSiD_sde
+  target: models.quasid.quasid_cont.QuaSiD_cont
   params:
     seq_length: 512
     channels: 5

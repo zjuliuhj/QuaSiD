@@ -43,6 +43,7 @@ class EvaluationRunner:
             "channels": model_params["channels"],
             "backbone": model_params["backbone"],
             "use_pmi_corr": model_params["use_pmi_corr"],
+            "pmi_mode": model_params.get("pmi_mode", "blockwise"),
             "inst_norm": model_params["inst_norm"],
             "normalization": dataset_params.get("normalization", "none"),
             "freq_keep_ratio": model_params.get("freq_keep_ratio", 1.0),

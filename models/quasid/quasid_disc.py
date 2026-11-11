@@ -7,7 +7,7 @@ from models.quasid.ddpm_schedule import DDPM
 from models.quasid.quasid import QuaSiD
 
 
-class QuaSiD_ddpm(QuaSiD):
+class QuaSiD_disc(QuaSiD):
     """Discrete-time DDPM QuaSiD variant.
 
     Uses the shared QuaSiD frequency-domain interface and owns only the

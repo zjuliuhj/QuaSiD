@@ -91,10 +91,10 @@ def build_parser():
     parser.add_argument('opts', help='Modify config options using the command-line',
                         default=None, nargs=argparse.REMAINDER)
 
-    parser.add_argument('--model_name', type=str, default='quasid_sde',
+    parser.add_argument('--model_name', type=str, default='quasid_cont',
                         help='The name of the model, used for path naming')
     parser.add_argument('--dataset_name', type=str, default=None,
-                        help='Dataset name used for path grouping, e.g. etth1 in quasid_sde/etth1/etth1_seq128.')
+                        help='Dataset name used for path grouping, e.g. etth1 in quasid_cont/etth1/etth1_seq128.')
     parser.add_argument('--num_samples', type=int, default=5,
                         help='How many times to run the sampling process')
     parser.add_argument('--visualization_compare', type=int, default=3000,
