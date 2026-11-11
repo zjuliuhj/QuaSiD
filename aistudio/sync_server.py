@@ -59,8 +59,8 @@ def prepare(deletions: list[str], files: list[str] | None = None) -> list[str]:
         local = ROOT / value
         if not local.is_file() or local.resolve() != local.absolute():
             raise ValueError(f"Missing file or symlink in upload path: {value}")
-        if value == "aistudio/connect_ai_studio.sh":
-            raise ValueError(f"Local authentication helper in upload manifest: {value}")
+        if path.parts[0] == "aistudio":
+            raise ValueError(f"Local-only AI Studio file in upload manifest: {value}")
         if (
             set(path.parts) & RUNTIME_DIRS and not value.startswith("scripts/experiments/")
         ) or path.suffix.lower() in RUNTIME_SUFFIXES:

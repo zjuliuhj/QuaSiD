@@ -1,13 +1,5 @@
 .gitignore
 README.md
-aistudio/AI_STUDIO_DAILY_LOGIN.md
-aistudio/AI_STUDIO_DEVELOPMENT_WORKFLOW.md
-aistudio/AI_STUDIO_SSH_CONNECTION.md
-aistudio/GIT_PUSH_AND_SERVER_SYNC_SOP.md
-aistudio/SYNC_FILES.txt
-aistudio/TENSORBOARD.md
-aistudio/sync_server.py
-aistudio/tensorboard_server.py
 config/conditional/air.yaml
 config/conditional/electricity.yaml
 config/conditional/etth1.yaml
@@ -75,6 +67,7 @@ scripts/experiments/train_eval.sh
 scripts/smoke_v5.py
 tests/test_conditional_metric_scale.py
 tests/test_ema.py
+tests/test_logger.py
 tests/test_quasid_v5.py
 tests/test_sine_dataset.py
 utils/ema.py

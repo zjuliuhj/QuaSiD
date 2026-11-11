@@ -3,6 +3,9 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+from pathlib import Path
+import shutil
+import tempfile
 import time
 from utils.runtime import save_config_to_yaml, write_args
 
@@ -20,15 +23,21 @@ class Logger(object):
         file_name = os.path.join(self.config_dir, 'args.txt')
         write_args(args, file_name)
 
-        log_dir = os.path.join(self.save_dir, 'logs')
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-        self.text_writer = open(os.path.join(log_dir, 'log.txt'), 'a') # 'w')
+        self.log_dir = Path(self.save_dir) / 'logs'
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.text_writer = (self.log_dir / 'log.txt').open('a')
         if args.tensorboard:
             from torch.utils.tensorboard import SummaryWriter
 
-            self.log_info('using tensorboard')
-            self.tb_writer = SummaryWriter(log_dir=log_dir)
+            # Network filesystem writes can fill SummaryWriter's queue and stall rank 0.
+            tb_root = Path(os.environ.get(
+                'QUASID_TENSORBOARD_ROOT', Path(tempfile.gettempdir()) / 'quasid-tensorboard'
+            ))
+            tb_root.mkdir(parents=True, exist_ok=True)
+            run_name = Path(self.save_dir).parent.name
+            self.tb_dir = Path(tempfile.mkdtemp(prefix=f'{run_name}-', dir=tb_root))
+            self.tb_writer = SummaryWriter(log_dir=str(self.tb_dir), flush_secs=30)
+            self.log_info(f'TensorBoard live events: {self.tb_dir}')
         else:
             self.tb_writer = None
 
@@ -76,3 +85,6 @@ class Logger(object):
         self.text_writer.close()
         if self.tb_writer is not None:
             self.tb_writer.close()
+            # Archive only after the writer has stopped; retain local events for recovery.
+            for event_file in self.tb_dir.glob('events.out.tfevents.*'):
+                shutil.copy2(event_file, self.log_dir / event_file.name)

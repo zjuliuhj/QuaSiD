@@ -17,9 +17,9 @@
 | 任务 | `uncond`、`cond`、`forecast` |
 | 运行产物 | `experiments/<mode>/<model_name>/<dataset>/<experiment>/` |
 
-源码只在本地修改，服务器用于获授权的运行、测试和评估。本地与服务器根目录直接包含 `main.py`、`models/`、`config/`、`data/` 和 `aistudio/`。同步仅传输白名单源码，不迁移数据、checkpoint、日志或实验产物。单独获授权的数据同步写入 `data/datasets/`，运行前检查所选配置要求的数据是否已在服务器准备好。
+源码只在本地修改，服务器用于获授权的运行、测试和评估。本地与服务器根目录直接包含 `main.py`、`models/`、`config/` 和 `data/`。`aistudio/` 是本地连接、同步工具与操作文档目录，不上传，服务器无需此目录。同步仅传输白名单源码，不迁移数据、checkpoint、日志或实验产物。单独获授权的数据同步写入 `data/datasets/`，运行前检查所选配置要求的数据是否已在服务器准备好。
 
-当前代码将 checkpoint 写入运行目录下的 `ckpt/`，文本日志和 TensorBoard 事件写入 `log/logs/`，参数与配置写入 `log/configs/`，评估图写入 `eval/` 或 `eval/<eval_tag>/`，评估指标写入 CSV。所有路径相对服务器工程根目录。当前实现直接写入工程目录，没有独立 checkpoint 根目录或临时 TensorBoard 归档机制。
+当前代码将 checkpoint 写入运行目录下的 `ckpt/`，文本日志写入 `log/logs/`，参数与配置写入 `log/configs/`，评估图写入 `eval/` 或 `eval/<eval_tag>/`，评估指标写入 CSV。这些路径相对服务器工程根目录。TensorBoard 实时事件写入服务器本地 `/tmp/quasid-tensorboard/`（可用 `QUASID_TENSORBOARD_ROOT` 指定本地磁盘目录），正常关闭后复制到运行目录的 `log/logs/` 归档，避免 NFS 写入阻塞 DDP。标量默认每 50 步及首末步记录，详见 [TensorBoard 文档](TENSORBOARD.md)。
 
 ## 唯一通道与认证
 
@@ -37,7 +37,7 @@ SSH/SFTP 只连接 `127.0.0.1:58598`，用户固定为 `cairongyao.cry`。不得
 
 1. 检查当前工程是否有 `.git`。有 Git 时盘点状态、已跟踪差异和未跟踪文件，保留用户已有改动；源码快照使用文件清单检查。
 2. 使用 apply_patch 修改源码、配置和文档。
-3. 默认只对本轮改动文件执行静态检查：Python 使用 AST 解析、Shell 使用 `bash -n`、YAML 使用 `yaml.safe_load`，不导入模型或收集测试。有 `.git` 时执行 `git diff --check`。可运行 `conda run -n rycai python aistudio/sync_server.py --check-only --files <改动路径...>`。
+3. 默认只对本轮改动文件执行静态检查：Python 使用 AST 解析、Shell 使用 `bash -n`、YAML 使用 `yaml.safe_load`，不导入模型或收集测试。有 `.git` 时执行 `git diff --check`。白名单内文件可运行 `conda run -n rycai python aistudio/sync_server.py --check-only --files <改动路径...>`；本地专用的 `aistudio/` 文件直接使用对应静态检查工具。
 4. 用户授权同步后，按 [Git 与同步流程](GIT_PUSH_AND_SERVER_SYNC_SOP.md) 上传明确选择的白名单文件。仅在用户明确要求行为测试时运行最相关的现有用例，使用 `--maxfail=1 --durations=3`。
 
 本地不自动运行 pytest、模型前向、CPU 冒烟或训练。全量测试和完整训练/评估须由用户明确要求；日常修改不新增重复覆盖的测试。服务器失败时回到本地修复，再按新一轮同步流程交付。缺少依赖或环境不符时报告直接错误，不静默安装或切换环境。纯文档修改使用本地检查验收。

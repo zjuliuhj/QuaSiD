@@ -192,6 +192,7 @@ class Trainer(object):
             total=self.train_num_steps,
             desc='Training',
             disable=not self.is_main_process,
+            mininterval=1.0,
         )
         with progress as pbar:
             while self.step < self.train_num_steps:
@@ -210,7 +211,7 @@ class Trainer(object):
                 total_loss_step = self._mean_across_ranks(total_loss_step)
 
                 if self.is_main_process:
-                    pbar.set_description(f'loss: {total_loss_step:.6f}')
+                    pbar.set_description(f'loss: {total_loss_step:.6f}', refresh=False)
 
                 self.scaler.unscale_(self.opt)
                 grad_norm = clip_grad_norm_(self.model.parameters(), 1.0)
@@ -226,7 +227,10 @@ class Trainer(object):
                 step_time_seconds = time.perf_counter() - step_start_time
                 self.elapsed_train_seconds += step_time_seconds
 
-                if self.logger is not None:
+                if self.logger is not None and (
+                    self.step == 1 or self.step % self.args.log_interval == 0
+                    or self.step == self.train_num_steps
+                ):
                     self.logger.add_scalar(tag="train/loss", scalar_value=total_loss_step, global_step=self.step)
                     self.logger.add_scalar(
                         tag="train/lr",

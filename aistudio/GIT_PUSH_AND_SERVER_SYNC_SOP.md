@@ -4,7 +4,7 @@
 
 ## 1. 范围与前置条件
 
-- `sync` 上传列于 [SYNC_FILES.txt](SYNC_FILES.txt) 的源码、配置、测试与文档（新增源码文件时同步更新白名单）；数据文件、本地认证脚本 `aistudio/connect_ai_studio.sh`、编辑器配置、checkpoint 与日志均不入白名单。
+- `sync` 上传列于 [SYNC_FILES.txt](SYNC_FILES.txt) 的源码、配置、测试与工程文档（新增源码文件时同步更新白名单）；整个 `aistudio/` 目录仅供本地使用，不上传。数据文件、编辑器配置、checkpoint 与日志均不入白名单。
 - `commit` 与 `push` 独立于服务器同步，Git 不是 `sync` 的前置条件。当前无 `.git` 时按源码快照处理；在有 `.git` 的工作区执行 `push` 时，先检查 `git status --short`、差异与既有 remote，覆盖全部待同步改动并推送当前分支既有目标。
 - `--delete <旧路径>` 仅在用户明确要求清理、本地文件已移除且当前仓库具备可核验的 `.git` 历史时使用；无 `.git` 的快照会直接拒绝删除请求。
 
@@ -12,7 +12,7 @@
 
 ```bash
 cd "/Users/rycai/Workspace/TPAMI QuaSiD Code"
-conda run -n rycai python aistudio/sync_server.py --check-only --files aistudio/sync_server.py
+conda run -n rycai python aistudio/sync_server.py --check-only --files main.py
 ```
 
 将 `--files` 参数替换为本轮实际改动的白名单路径（或用 `--all` 检查全量清单）。该模式对 `.py` 解析 AST、对 `.sh` 执行 `bash -n`、对 `.yaml` 执行 `yaml.safe_load`，有 `.git` 时同时执行 `git diff --check`。
@@ -24,7 +24,7 @@ conda run -n rycai python aistudio/sync_server.py --check-only --files aistudio/
 ```bash
 # 按需同步本轮改动文件
 conda run -n rycai python aistudio/sync_server.py --dry-run \
-  --files aistudio/sync_server.py aistudio/SYNC_FILES.txt
+  --files main.py config/unconditional/stocks.yaml
 
 # 仅在获授权全量部署时检查完整清单
 conda run -n rycai python aistudio/sync_server.py --dry-run --all
@@ -34,7 +34,7 @@ conda run -n rycai python aistudio/sync_server.py --dry-run --all
 
 ```bash
 conda run -n rycai --no-capture-output python aistudio/sync_server.py \
-  --files aistudio/sync_server.py aistudio/SYNC_FILES.txt
+  --files main.py config/unconditional/stocks.yaml
 ```
 
 若有获授权的远端旧文件清理，在 `--dry-run` 与正式同步中传入相同的 `--delete <旧路径>`。任一步骤报错即停止本轮，待本地修正并重新通过 `--dry-run` 后再按用户指示重试。

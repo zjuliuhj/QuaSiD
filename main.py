@@ -69,6 +69,8 @@ def build_parser():
                         help='path of config file')
     parser.add_argument('--tensorboard', action='store_true',
                         help='use tensorboard for logging')
+    parser.add_argument('--log_interval', type=int, default=50,
+                        help='Record training scalars every N optimizer steps, plus first and last.')
 
     # args for randomness
     parser.add_argument('--seed', type=int, default=12345,
@@ -118,6 +120,8 @@ def parse_args(argv=None):
     """Parse CLI arguments and derive experiment paths without filesystem side effects."""
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.log_interval < 1:
+        parser.error('--log_interval must be positive.')
 
     if args.opts and args.opts[0] == "--":
         args.opts = args.opts[1:]
