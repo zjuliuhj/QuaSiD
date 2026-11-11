@@ -2,9 +2,8 @@
 
 QuaSiD is a PyTorch implementation of frequency-domain time-series diffusion
 with separate real and imaginary DiT streams and shared quadrature PMI correction.
-This source release contains **the V5 backbone only**.
 
-Supported tasks are unconditional generation, embedding-conditioned generation, and probabilistic forecasting. The same V5 backbone is available with continuous VP-SDE and discrete DDPM diffusion wrappers.
+Supported tasks are unconditional generation, embedding-conditioned generation, and probabilistic forecasting. The same QuaSiD backbone is available with continuous VP-SDE and discrete DDPM diffusion wrappers.
 
 ## Model implementation
 
@@ -15,7 +14,7 @@ All model code lives in [models/quasid/](models/quasid/). The public model ident
 | Continuous VP-SDE | `quasid_sde` | `models.quasid.quasid_sde.QuaSiD_sde` |
 | Discrete DDPM | `quasid_ddpm` | `models.quasid.quasid_ddpm.QuaSiD_ddpm` |
 
-[quasid.py](models/quasid/quasid.py) provides the shared `QuaSiD` base class, condition encoder, orthonormal rFFT transforms, spectral noise covariance, and noise-prediction loss. [dit_solver_v5.py](models/quasid/dit_solver_v5.py) implements the separate real and imaginary DiT streams; [dit_blocks.py](models/quasid/dit_blocks.py) contains their shared quadrature PMI correction. The SDE wrapper uses Euler–Maruyama reverse sampling, and the DDPM wrapper uses DDIM/generalized jump sampling.
+[quasid.py](models/quasid/quasid.py) provides the shared `QuaSiD` base class, condition encoder, orthonormal rFFT transforms, spectral noise covariance, and noise-prediction loss. The [QuaSiD backbone](models/quasid/dit_solver_v5.py) implements the separate real and imaginary DiT streams; [dit_blocks.py](models/quasid/dit_blocks.py) contains their shared quadrature PMI correction. The SDE wrapper uses Euler–Maruyama reverse sampling, and the DDPM wrapper uses DDIM/generalized jump sampling.
 
 ## Installation
 
@@ -47,9 +46,7 @@ python -m pytest -q
 python scripts/smoke_v5.py
 ```
 
-The smoke check uses temporary sine data on CPU, trains tiny V5 models with both
-diffusion wrappers, saves checkpoints, and reloads them for sampling. It does not
-run the expensive learned quality metrics or create artifacts inside this repository.
+The smoke check uses temporary sine data on CPU, trains tiny QuaSiD models with both diffusion wrappers, saves checkpoints, and reloads them for sampling. It does not run the expensive learned quality metrics or create artifacts inside this repository.
 
 ## Data
 
@@ -66,9 +63,7 @@ Configurations are organized by task:
 | Embedding-conditioned generation | `cond` | `config/conditional/` |
 | Probabilistic forecasting | `forecast` | `config/forecasting/` |
 
-All bundled YAML files select `backbone: dit_solver_v5`. The Quito configuration
-expects `data/datasets/Quito.npy`, shaped `[time, 5]`. Keep the capital `Q` in its
-filename and configuration name.
+All bundled YAML files use the QuaSiD backbone. The Quito configuration expects `data/datasets/Quito.npy`, shaped `[time, 5]`. Keep the capital `Q` in its filename and configuration name.
 
 Conditional embeddings, raw Parquet sources, checkpoints, and generated
 samples are not bundled. Prepare any additional files required by your selected
@@ -135,10 +130,10 @@ The following commands run from the repository root. Unconditional sine generati
 is a complete example with no external data:
 
 ```bash
-python main.py --train --name sines_v5 --mode uncond \
+python main.py --train --name sines_quasid --mode uncond \
   --config_file config/unconditional/sines.yaml --model_name quasid_sde
 
-python main.py --name sines_v5 --mode uncond \
+python main.py --name sines_quasid --mode uncond \
   --config_file config/unconditional/sines.yaml --model_name quasid_sde \
   --milestone 10 --seed 2021
 ```
@@ -153,7 +148,7 @@ standalone generated-sample NPY file.
 Options after the standard flags are YAML overrides in `key value` pairs:
 
 ```bash
-python main.py --train --name Quito_v5 --mode uncond \
+python main.py --train --name Quito_quasid --mode uncond \
   --config_file config/unconditional/Quito.yaml --model_name quasid_sde \
   model.params.seq_length 128 dataloader.dataset.params.window 128
 
@@ -178,31 +173,31 @@ MODE=uncond DATASET=sines MODEL_NAME=quasid_ddpm RUN_EVAL=false \
 In `main.py`, `--model_name` controls output directory naming, while `model.target` selects the model class. Set both when switching from the bundled SDE configuration to DDPM, and keep YAML overrides after all CLI flags:
 
 ```bash
-python main.py --train --name sines_v5 --mode uncond \
+python main.py --train --name sines_quasid --mode uncond \
   --config_file config/unconditional/sines.yaml --model_name quasid_ddpm \
   model.target models.quasid.quasid_ddpm.QuaSiD_ddpm
 ```
 
 Use the same target override when evaluating that DDPM checkpoint.
 
-### Existing V5 checkpoints
+### Loading checkpoints
 
-The QuaSiD naming update preserves model and EMA parameter keys. To use an existing V5 state-dict checkpoint, retain its original architecture and data settings, update the saved configuration's `model.target` to the corresponding target above, and use this checkpoint location with the new model identifier:
+To load a QuaSiD checkpoint, match its original architecture, diffusion wrapper, and data settings. Use the corresponding `model.target` above and place the checkpoint at:
 
 ```text
 experiments/<mode>/<model_name>/<dataset>/<experiment>/ckpt/ckpt-<milestone>.pt
 ```
 
-Renaming the source does not relocate existing experiment folders. For evaluation, `--ckpt_name` selects the checkpoint experiment and defaults to `--name`.
+For evaluation, `--ckpt_name` selects the checkpoint experiment and defaults to `--name`.
 
 ## GPU queues and repeated evaluation
 
 ```bash
-# Preview the V5 Quito tasks. The preview writes only queue bookkeeping logs.
+# Preview the Quito tasks. The preview writes only queue bookkeeping logs.
 DRY_RUN=true DATASETS=Quito GPU_IDS=0 \
   bash scripts/experiments/run_unconditional.sh
 
-# Train one V5 configuration and evaluate every saved checkpoint.
+# Train one QuaSiD configuration and evaluate every saved checkpoint.
 DATASETS=Quito SEQ_LENGTHS=128 MODEL_NAME=quasid_sde GPU_IDS=0 \
   bash scripts/experiments/run_unconditional.sh
 
@@ -218,8 +213,7 @@ according to `GPU_MAX_MEMORY_USED_MB` and `GPU_MAX_UTILIZATION`.
 
 Useful settings include `DATASETS`, `SEQ_LENGTHS`, `MODEL_NAME`, `RUN_TRAIN`,
 `RUN_EVAL`, `EVAL_ALL_CHECKPOINTS`, `MILESTONE`, `EVAL_SEEDS`, and `LOG_ROOT`.
-The supported model names are `quasid_sde` and `quasid_ddpm`;
-`BACKBONE` must remain `dit_solver_v5`.
+The supported model names are `quasid_sde` and `quasid_ddpm`. Keep `BACKBONE` at its bundled default.
 
 For a saved unconditional run, reproduce its original training overrides and use
 `RUN_TRAIN=false` with the same `EXP_NAME` in `train_eval.sh`.
@@ -232,16 +226,16 @@ train additional networks and may take substantial time.
 
 ```text
 main.py                    Training and checkpoint-evaluation CLI
-models/quasid/             QuaSiD base class, V5 backbone, SDE/DDPM wrappers
+models/quasid/             QuaSiD base class, DiT backbone, SDE/DDPM wrappers
 models/ts2vec/             Context-FID representation model
 engine/                    Optimizer loop, EMA integration, schedulers, logging
 data/                      Loaders and normalization
-config/                    V5 configurations for all three tasks
+config/                    QuaSiD configurations for all three tasks
 evaluation/                Task evaluation and metrics output
 utils/                     Metrics, EMA, visualization, runtime utilities
 scripts/data/              Optional data conversion and sine generation tools
 scripts/experiments/       GPU queues, train/evaluate launchers, metric summaries
-tests/                     V5, EMA, sine-loader, and metric-space checks
+tests/                     Model, EMA, sine-loader, and metric-space checks
 ```
 
 Outputs go to `experiments/<mode>/<model_name>/<dataset>/<experiment>/`, including
@@ -250,15 +244,11 @@ These generated directories are ignored by Git.
 
 ## Source release and validation
 
-This repository contains the V5 backbone and its required training, data, and
-evaluation dependencies. Earlier backbones and comparison implementations are
-excluded, along with checkpoints, logs, and private remote-operation scripts.
-The 11 NPY datasets listed above are included. All bundled model configurations
-select V5.
+This repository contains the QuaSiD model, training and evaluation code, task configurations, and the 11 NPY datasets listed above. Checkpoints, logs, and local authentication credentials are excluded.
 
 Validation after the QuaSiD naming update passed:
 
-- All 41 tests covering the V5 backbone, diffusion wrappers, EMA, sine loader, and conditional metric scaling.
+- All 41 tests covering the QuaSiD backbone, diffusion wrappers, EMA, sine loader, and conditional metric scaling.
 - CPU training, finite checkpoint checks, EMA reload, and sampling for both `quasid_sde` and `quasid_ddpm`.
 - Schema validation and model-target imports for all 25 YAML configurations.
 - Shell syntax checks for the experiment launchers.
