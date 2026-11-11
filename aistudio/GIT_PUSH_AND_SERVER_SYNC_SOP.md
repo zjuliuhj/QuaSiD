@@ -1,6 +1,6 @@
 # QuaSiD Git 与服务器同步交付流程
 
-认证边界、SFTP 协议约束与服务器运行约定见 [AI Studio 开发工作流](AI_STUDIO_DEVELOPMENT_WORKFLOW.md)。本文给出本地静态检查、源码同步与 Git 交付的标准命令和报告项。
+Git SSH 首次配置、未来工程复用与认证排错见 [AntCode Git SSH 配置](GIT_SSH_SETUP.md)。AI Studio 认证边界、SFTP 协议约束与服务器运行约定见 [AI Studio 开发工作流](AI_STUDIO_DEVELOPMENT_WORKFLOW.md)。本文给出本地静态检查、源码同步与 Git 交付的标准命令和报告项。
 
 ## 1. 范围与前置条件
 

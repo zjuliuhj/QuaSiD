@@ -242,6 +242,10 @@ Outputs go to `experiments/<mode>/<model_name>/<dataset>/<experiment>/`, includi
 checkpoints, logs, evaluation plots, and metrics CSVs. Queue logs go to `logs/`.
 These generated directories are ignored by Git.
 
+## Development workflow
+
+For SSH setup, reuse in future projects, and authentication troubleshooting, see the [AntCode Git SSH guide](aistudio/GIT_SSH_SETUP.md). The [Git and server synchronization workflow](aistudio/GIT_PUSH_AND_SERVER_SYNC_SOP.md) describes local checks, commits, pushes, and separately authorized server uploads.
+
 ## Source release and validation
 
 This repository contains the QuaSiD model, training and evaluation code, task configurations, and the 11 NPY datasets listed above. Checkpoints, logs, and local authentication credentials are excluded.

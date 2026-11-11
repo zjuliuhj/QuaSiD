@@ -25,7 +25,7 @@
 
 ssctl 由用户维护。用户确认“ssctl 已连接”后，该授权在当前会话内持续有效；Codex 作为客户端完成明确授权的任务，不自行启动、停止、重启或替换隧道。
 
-SSH/SFTP 只连接 `127.0.0.1:58598`，用户固定为 `cairongyao.cry`。不得使用 root、直连、其他跳板、代理、ProxyJump、ProxyCommand、ControlMaster、control socket 或其他持久连接，也不得让客户端配置隐式切换路线。禁止反向转发和公网暴露。仅在用户明确要求实时查看 TensorBoard 时，允许 [TensorBoard 文档](TENSORBOARD.md) 中的本机回环地址转发。
+AI Studio 的 SSH/SFTP 只连接 `127.0.0.1:58598`，用户固定为 `cairongyao.cry`。不得使用 root、直连、其他跳板、代理、ProxyJump、ProxyCommand、ControlMaster、control socket 或其他持久连接，也不得让客户端配置隐式切换路线。禁止反向转发和公网暴露。仅在用户明确要求实时查看 TensorBoard 时，允许 [TensorBoard 文档](TENSORBOARD.md) 中的本机回环地址转发。Git 访问代码平台使用 [AntCode Git SSH 配置](GIT_SSH_SETUP.md)。
 
 认证包装器仅在内存中从本地忽略文件 `aistudio/connect_ai_studio.sh` 读取所需认证字段。不得使用 cat、sed、rg 或调试打印输出该脚本，不得将密码写入新文件、命令、日志、工具输出、Git 或服务器。
 
@@ -72,6 +72,6 @@ CUDA_VISIBLE_DEVICES="${QUASID_DEVICES:?请先设置两张空闲设备编号}" \
 
 ## Git 与报告
 
-当前目录没有 `.git` 时按源码快照处理，不自动初始化仓库或选择 remote。存在 `.git` 且用户要求 push 时，盘点全部本地修改和非忽略的未跟踪文件，逐路径暂存、创建必要提交并推送当前分支的既有目标。保留既有 remote 和认证方式，不硬编码其他项目的分支，不生成 SSH key 或读取 Keychain 来解决推送问题。
+当前目录没有 `.git` 时按源码快照处理，不自动初始化仓库或选择 remote。存在 `.git` 且用户要求 push 时，盘点全部本地修改和非忽略的未跟踪文件，逐路径暂存、创建必要提交并推送当前分支的既有目标。日常推送复用已验证的 SSH 配置，保留既有 remote 和认证方式，不硬编码其他项目的分支，不自动重新生成密钥或切换到钥匙串认证。用户明确要求首次配置或修复 SSH 时，按 [AntCode Git SSH 配置](GIT_SSH_SETUP.md) 检查现有身份并完成获授权的操作。
 
 Git 失败不阻止已授权的源码同步。报告分别说明本地修改、静态检查、服务器同步、服务器测试和 Git 操作的实际结果。同步报告列出上传数量与失败路径、删除数量与缺失路径，以及未执行的操作。
