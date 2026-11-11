@@ -1,0 +1,59 @@
+# Quito Hour: item_id=110825, sorted by date_time.
+# Raw float32 shape: (15356, 5); columns: ind_1, ind_2, ind_3, ind_4, ind_5.
+# Source: test_hour-00001-of-00001.parquet; normalization is applied by the loader.
+model:
+  target: models.quasid.quasid_sde.QuaSiD_sde
+  params:
+    seq_length: 512
+    channels: 5
+    max_step: 1000
+    sampling_steps: 500
+    cfg_scale: 0.0
+    beta_min: 0.1
+    beta_max: 20.0
+    freq_keep_ratio: 1.0
+    backbone: dit_solver_v5
+    use_pmi_corr: true
+    use_loss_weight: false
+    inst_norm: false
+    emb_size: 256
+    corr_rank: 64
+    patch_size: 1
+    num_layers: 4
+
+solver:
+  base_lr: 1.0e-04
+  train_steps: 20000
+  mixed_precision: bf16
+  grad_accum_every: 2
+  ckpt_count: 5
+  save_cycle: 2000
+  ema:
+    decay: 0.995
+    update_interval: 10
+  scheduler:
+    target: engine.lr_sch.CosineAnnealingLRWithWarmup
+    params:
+      T_max: 20000
+      min_lr: 1.0e-04
+      warmup_lr: 1.0e-03
+      warmup: 500
+      verbose: false
+
+dataloader:
+  dataset:
+    target: data.dataset_utils.time_series_dataset.TimeSeriesDataset
+    params:
+      data_root: ./data/datasets/Quito.npy
+      window: 512
+      channels: 5
+      stride: 1
+      split_ratio: 1.0
+      normalization: minmax
+  batch_size: 128
+  sample_size: 256
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  shuffle: true

@@ -1,0 +1,62 @@
+model:
+  target: models.quasid.quasid_sde.QuaSiD_sde
+  params:
+    seq_length: 224
+    channels: 3
+    condition_domain: frequency
+    max_step: 500
+    sampling_steps: 200
+    cfg_scale: 2.5
+    freq_keep_ratio: 1.0
+    backbone: dit_solver_v5
+    use_pmi_corr: true
+    inst_norm: true
+    emb_size: 128
+    corr_rank: 128
+    patch_size: 1
+    num_layers: 4
+    channel_indep: false
+
+solver:
+  base_lr: 1.0e-05
+  train_steps: 18000
+  mixed_precision: bf16
+  grad_accum_every: 2
+  ckpt_count: 5
+  save_cycle: 3600
+  ema:
+    decay: 0.995
+    update_interval: 10
+  scheduler:
+    target: engine.lr_sch.ReduceLROnPlateauWithWarmup
+    params:
+      factor: 0.5
+      patience: 4000
+      min_lr: 1.0e-05
+      threshold: 0.1
+      threshold_mode: rel
+      warmup_lr: 0.0008
+      warmup: 500
+      verbose: false
+
+dataloader:
+  dataset:
+    target: data.dataset_utils.forecasting_dataset.ForecastingDataset
+    params:
+      data_root: ./data/datasets/de.npy
+      history_length: 96
+      pred_length: 128
+      channels: 3
+      stride: 1
+      train_ratio: 0.7
+      val_ratio: 0.1
+      normalization: zscore
+      condition_format: sequence
+  test_sample_limit: null
+  batch_size: 128
+  sample_size: 256
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  shuffle: true
