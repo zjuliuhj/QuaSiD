@@ -40,7 +40,7 @@ class DiTSolverLayer(nn.Module):
         if self.pmi is None:
             return dit_r, dit_i
         if noise_scale is None or spectral_variance is None:
-            raise ValueError("V5 PMI fusion requires noise_scale and spectral_variance.")
+            raise ValueError("PMI fusion requires noise_scale and spectral_variance.")
 
         var_r, var_i = spectral_variance
         pmi_context = 0.5 * (c_r + c_i)
@@ -54,7 +54,7 @@ class DiTSolverLayer(nn.Module):
 
 
 class DiTSolver(nn.Module):
-    """Independent DiT streams with blockwise or output-level PMI correction."""
+    """Separate DiT streams with blockwise PMI correction."""
 
     def __init__(
         self,
@@ -66,15 +66,12 @@ class DiTSolver(nn.Module):
         spectrum_bins: int | None = None,
         corr_rank: int | None = None,
         attn_backend: str = "flash",
-        pmi_mode: str = "blockwise",
     ) -> None:
         super().__init__()
         if patch_size != 1:
             raise ValueError("dit_solver_v5 requires patch_size=1 for frequency-wise covariance fusion.")
         if spectrum_bins is None:
             raise ValueError("dit_solver_v5 requires spectrum_bins from the diffusion wrapper.")
-        if pmi_mode not in {"blockwise", "independent"}:
-            raise ValueError("pmi_mode must be 'blockwise' or 'independent'.")
 
         self.emb_size = emb_size
         spectrum_bins = int(spectrum_bins)
@@ -85,7 +82,7 @@ class DiTSolver(nn.Module):
         self.layers = nn.ModuleList([
             DiTSolverLayer(
                 d_model=emb_size, spectrum_bins=spectrum_bins,
-                use_pmi_corr=use_pmi_corr and pmi_mode == "blockwise",
+                use_pmi_corr=use_pmi_corr,
                 corr_rank=corr_rank, attn_backend=attn_backend,
             )
             for _ in range(num_layers)
@@ -95,11 +92,6 @@ class DiTSolver(nn.Module):
         self.linear_emb_to_patch_r = nn.Linear(emb_size, channels)
         self.linear_emb_to_patch_i = nn.Linear(emb_size, channels)
         self.time_emb = TimeEmbedding(dim=emb_size)
-        self.pmi = (
-            SharedQuadraturePMIBlock(spectrum_bins, emb_size, corr_rank=corr_rank)
-            if use_pmi_corr and pmi_mode == "independent"
-            else None
-        )
 
         self.initialize_weights()
 
@@ -113,8 +105,6 @@ class DiTSolver(nn.Module):
         spectral_variance: tuple[torch.Tensor, torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Return epsilon predictions for the shared DDPM and SDE wrappers."""
-        if self.pmi is not None and (noise_scale is None or spectral_variance is None):
-            raise ValueError("Independent PMI fusion requires noise_scale and spectral_variance.")
         seq_length = input_r.shape[1]
         x_r = self.conv_r(input_r.transpose(1, 2)).transpose(1, 2)
         x_i = self.conv_i(input_i.transpose(1, 2)).transpose(1, 2)
@@ -141,14 +131,6 @@ class DiTSolver(nn.Module):
 
         pred_r = self.linear_emb_to_patch_r(self.ln_r(x_r))
         pred_i = self.linear_emb_to_patch_i(self.ln_i(x_i))
-        if self.pmi is not None:
-            var_r, var_i = spectral_variance
-            # The independent PMI path sees spectral inputs, never DiT hidden states.
-            score_pmi_r, score_pmi_i = self.pmi(
-                input_r, input_i, 0.5 * (c_r + c_i), imaginary_mask=(var_i > 0)
-            )
-            pred_r = pred_r - noise_scale * var_r * score_pmi_r
-            pred_i = pred_i - noise_scale * var_i * score_pmi_i
         return pred_r, pred_i
 
     def initialize_weights(self) -> None:
@@ -164,5 +146,3 @@ class DiTSolver(nn.Module):
                 nn.init.zeros_(modulation.bias)
             if layer.pmi is not None:
                 layer.pmi.zero_init_modulation()
-        if self.pmi is not None:
-            self.pmi.zero_init_modulation()

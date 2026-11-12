@@ -16,36 +16,9 @@ All model code lives in [models/quasid/](models/quasid/). The public model ident
 
 [quasid.py](models/quasid/quasid.py) provides the shared `QuaSiD` base class, condition encoder, orthonormal rFFT transforms, spectral noise covariance, and noise-prediction loss. The [QuaSiD backbone](models/quasid/dit_solver_v5.py) implements the separate real and imaginary DiT streams; [dit_blocks.py](models/quasid/dit_blocks.py) contains their shared quadrature PMI correction. The SDE wrapper uses Euler–Maruyama reverse sampling, and the DDPM wrapper uses DDIM/generalized jump sampling.
 
-### PMI placement ablation
+### Blockwise PMI correction
 
-Set `model.params.pmi_mode` to select where PMI enters the prediction:
-
-| Mode | PMI input | Fusion | PMI blocks |
-| --- | --- | --- | --- |
-| `blockwise` (default) | Each layer's even/odd hidden states | Inside every DiT layer | `num_layers` |
-| `independent` | Even/odd input spectra, before the DiT projections | Once, after the two output heads | 1 |
-
-The independent network reuses `SharedQuadraturePMIBlock` unchanged: two shared
-frequency encoders, six time/condition modulation vectors, and two linear decoders.
-Its inputs and trainable parameters are independent of the DiT hidden-state paths.
-The fixed sinusoidal time embedding and external condition context are shared.
-Both modes retain zero-initialized PMI modulation and the imaginary DC/Nyquist mask.
-Independent fusion uses `epsilon = epsilon_backbone - noise_scale * variance * score_pmi`
-in each branch. Setting `use_pmi_corr=false` disables PMI in either mode.
-
-For the EEG length-256 ablation, reuse the existing training configuration and
-select a distinct experiment name:
-
-```bash
-python main.py --train --mode uncond --model_name quasid_cont \
-  --config_file config/unconditional/eeg.yaml --name eeg_seq256_pmi_independent \
-  --seed 12345 --tensorboard model.params.pmi_mode independent
-```
-
-Pass the same `model.params.pmi_mode independent` override when evaluating its
-checkpoints. Metrics record `pmi_mode`. With five DiT layers this changes five PMI
-blocks to one, so it compares placement and capacity together; it is not a
-parameter-matched experiment. Train a fresh checkpoint for the independent mode.
+Each DiT layer contains one `SharedQuadraturePMIBlock` operating on that layer's even/odd hidden states. The block uses two shared frequency encoders, six time/condition modulation vectors, and two linear decoders. Each branch fuses the correction as `hidden = hidden_dit - noise_scale * variance * score_pmi` before passing its output to the next layer. PMI modulation starts at zero, and the imaginary DC/Nyquist mask enforces the spectral constraints. Set `model.params.use_pmi_corr=false` to disable PMI.
 
 ## Installation
 
@@ -288,4 +261,4 @@ Historical validation of the blockwise-only release included:
 - Schema validation and model-target imports for all 25 YAML configurations.
 - Shell syntax checks for the experiment launchers.
 
-These historical checks ran in the existing `rycai` conda environment with Python 3.11.15, PyTorch 2.12.1, and NumPy 2.4.6. That environment's NumPy version is outside the installation range in `requirements.txt`. They do not validate the independent-PMI ablation or a fresh dependency installation. The focused checks for both PMI modes and the renamed wrappers are in `tests/test_quasid_v5.py`; run them in the target environment before launching experiments.
+These historical checks ran in the existing `rycai` conda environment with Python 3.11.15, PyTorch 2.12.1, and NumPy 2.4.6. That environment's NumPy version is outside the installation range in `requirements.txt`. They do not validate a fresh dependency installation. The focused checks for blockwise PMI and both diffusion wrappers are in `tests/test_quasid_v5.py`; run them in the target environment before launching experiments.

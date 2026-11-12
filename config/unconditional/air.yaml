@@ -11,7 +11,6 @@ model:
     freq_keep_ratio: 1.0
     backbone: dit_solver_v5
     use_pmi_corr: true
-    pmi_mode: blockwise
     use_loss_weight: false
     inst_norm: false
     emb_size: 256

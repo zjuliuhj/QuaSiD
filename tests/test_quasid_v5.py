@@ -64,15 +64,14 @@ def test_correction_is_affine_at_fixed_context_and_masks_imaginary_endpoints():
     assert torch.count_nonzero(at_a[1][:, (0, -1)]) == 0
 
 
-@pytest.mark.parametrize("pmi_mode", ["blockwise", "independent"])
-def test_backbone_initialization_keeps_all_pmi_blocks_exactly_zero(pmi_mode):
+def test_backbone_initialization_keeps_all_pmi_blocks_exactly_zero():
     model = build_backbone(
         "dit_solver_v5", channels=2, emb_size=32, spectrum_bins=7,
-        num_layers=2, corr_rank=2, attn_backend="sdpa", pmi_mode=pmi_mode,
+        num_layers=2, corr_rank=2, attn_backend="sdpa",
     )
     assert isinstance(model, DiTSolver)
     blocks = [module for module in model.modules() if isinstance(module, SharedQuadraturePMIBlock)]
-    assert len(blocks) == (2 if pmi_mode == "blockwise" else 1)
+    assert len(blocks) == 2
     for block in blocks:
         corrections = block(torch.randn(2, 7, 2), torch.randn(2, 7, 2), torch.randn(2, 32))
         assert all(torch.count_nonzero(value) == 0 for value in corrections)
@@ -90,16 +89,15 @@ def test_v5_pmi_receives_condition_context():
 
 
 @pytest.mark.parametrize("model_cls", [QuaSiD_cont, QuaSiD_disc])
-@pytest.mark.parametrize("pmi_mode", ["blockwise", "independent"])
 @pytest.mark.parametrize("case", ["even", "odd", "cropped", "embedding", "forecast", "forecast_ci"])
-def test_v5_wrappers_train_and_sample_across_task_contracts(model_cls, case, pmi_mode):
+def test_v5_wrappers_train_and_sample_across_task_contracts(model_cls, case):
     torch.manual_seed(9)
     conditional = case in {"embedding", "forecast", "forecast_ci"}
     forecast = case.startswith("forecast")
     length = 25 if case == "odd" else 24
     model = model_cls(
         seq_length=length, channels=2, max_step=8, sampling_steps=2,
-        backbone="dit_solver_v5", use_pmi_corr=True, corr_rank=3, pmi_mode=pmi_mode,
+        backbone="dit_solver_v5", use_pmi_corr=True, corr_rank=3,
         emb_size=32, num_layers=2, device="cpu", attn_backend="sdpa",
         freq_keep_ratio=0.5 if case == "cropped" else 1.0,
         condition_domain="frequency" if forecast else "embedding",
@@ -127,76 +125,24 @@ def test_v5_wrappers_train_and_sample_across_task_contracts(model_cls, case, pmi
     assert torch.isfinite(sample).all()
 
 
-@pytest.mark.parametrize("pmi_mode", ["blockwise", "independent"])
-def test_v5_without_pmi_uses_independent_branches(pmi_mode):
+def test_v5_without_pmi_uses_independent_branches():
     model = build_backbone(
         "dit_solver_v5", channels=2, emb_size=32, spectrum_bins=7,
-        num_layers=2, use_pmi_corr=False, attn_backend="sdpa", pmi_mode=pmi_mode,
+        num_layers=2, use_pmi_corr=False, attn_backend="sdpa",
     )
     real, imaginary = torch.randn(2, 7, 2), torch.randn(2, 7, 2)
     first = model(real, imaginary, torch.ones(2))
     second = model(real, imaginary + 1, torch.ones(2))
     assert all(layer.pmi is None for layer in model.layers)
-    assert model.pmi is None
     torch.testing.assert_close(first[0], second[0])
 
 
-def test_independent_pmi_uses_raw_spectrum_and_fuses_after_backbone_heads():
-    torch.manual_seed(11)
-    params = dict(channels=2, emb_size=32, spectrum_bins=7, num_layers=2,
-                  corr_rank=3, attn_backend="sdpa", pmi_mode="independent")
-    model = build_backbone("dit_solver_v5", **params)
-    base = build_backbone("dit_solver_v5", **params, use_pmi_corr=False)
-    base.load_state_dict({key: value for key, value in model.state_dict().items()
-                          if not key.startswith("pmi.")})
-    assert all(layer.pmi is None for layer in model.layers)
-    with torch.no_grad():
-        model.pmi.time_mlp[-1].weight.normal_(std=0.1)
-        model.pmi.time_mlp[-1].bias.normal_(std=0.1)
-
-    real, imaginary = torch.randn(2, 7, 2), torch.randn(2, 7, 2)
-    time = torch.tensor([2.0, 5.0])
-    condition = (torch.randn(2, 32), torch.randn(2, 32))
-    scale = torch.tensor([0.2, 0.7])[:, None, None]
-    var_r, var_i = torch.ones(1, 7, 1), torch.full((1, 7, 1), 0.5)
-    var_i[:, (0, -1)] = 0
-    calls = []
-    handle = model.pmi.register_forward_hook(lambda module, args, output: calls.append((args, output)))
-    predicted = model(real, imaginary, time, condition, scale, (var_r, var_i))
-    base_predicted = base(real, imaginary, time, condition)
-    assert len(calls) == 1
-    inputs, correction = calls[0]
-    assert inputs[0] is real and inputs[1] is imaginary
-    torch.testing.assert_close(inputs[2], model.time_emb(time) + 0.5 * sum(condition))
-    assert torch.count_nonzero(correction[1][:, (0, -1)]) == 0
-    for actual, marginal, variance, delta in zip(predicted, base_predicted, (var_r, var_i), correction):
-        torch.testing.assert_close(actual, marginal - scale * variance * delta)
-
-    # Changing the marginal network must not change the independent correction.
-    with torch.no_grad():
-        model.conv_r.weight.add_(0.5)
-        model.linear_emb_to_patch_i.weight.mul_(2)
-    model(real, imaginary, time, condition, scale, (var_r, var_i))
-    handle.remove()
-    for first, second in zip(correction, calls[1][1]):
-        torch.testing.assert_close(first, second)
-    sum(value.square().sum() for value in calls[1][1]).backward()
-    assert model.pmi.time_mlp[-1].weight.grad is not None
-    assert all(parameter.grad is None for name, parameter in model.named_parameters()
-               if not name.startswith("pmi."))
-
-
 @pytest.mark.parametrize("missing", ["noise_scale", "spectral_variance"])
-def test_independent_pmi_requires_diffusion_scaling(missing):
+def test_v5_pmi_requires_diffusion_scaling(missing):
     model = DiTSolver(channels=2, emb_size=32, spectrum_bins=7, num_layers=1,
-                        pmi_mode="independent", attn_backend="sdpa")
+                      attn_backend="sdpa")
     args = dict(noise_scale=torch.ones(2, 1, 1),
                 spectral_variance=(torch.ones(1, 7, 1), torch.ones(1, 7, 1)))
     args.pop(missing)
     with pytest.raises(ValueError, match="requires noise_scale and spectral_variance"):
         model(torch.randn(2, 7, 2), torch.randn(2, 7, 2), torch.ones(2), **args)
-
-
-def test_invalid_pmi_mode_is_rejected():
-    with pytest.raises(ValueError, match="pmi_mode"):
-        DiTSolver(spectrum_bins=7, pmi_mode="invalid")

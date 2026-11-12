@@ -126,8 +126,8 @@ class SharedQuadraturePMIBlock(nn.Module):
         """Return real/imaginary score corrections with shape (B, K, C).
 
         The caller supplies imaginary_mask=(1, K, 1) for physical DC/Nyquist
-        constraints. Feature columns may be DiT hidden features or spectral input
-        channels; the caller determines where the score correction is fused.
+        constraints. Feature columns are DiT hidden features; the caller fuses
+        the score correction into the corresponding layer outputs.
         """
         if x_r.ndim != 3 or x_i.shape != x_r.shape:
             raise ValueError("PMI inputs must have identical (B, K, C) shapes.")
