@@ -27,6 +27,7 @@ class QuaSiD_cont(QuaSiD):
         beta_min=0.1,
         beta_max=10.0,
         time_eps=1e-5,
+        final_step_noise=False,
         condition_dim=128,
         backbone="dit_solver_v5",
         use_pmi_corr=True,
@@ -74,6 +75,7 @@ class QuaSiD_cont(QuaSiD):
         self.beta_min = beta_min
         self.beta_max = beta_max
         self.time_eps = time_eps
+        self.final_step_noise = final_step_noise
 
     def _model_timestep(self, t):
         """Scale continuous SDE time to the backbone embedding range `[0, max_step - 1]`."""
@@ -127,7 +129,17 @@ class QuaSiD_cont(QuaSiD):
         return self._noise_loss(pred_r, pred_i, noise_r, noise_i, stats, weight=weight)
 
     @torch.no_grad()
-    def _euler_maruyama_step(self, x_r, x_i, t_value, dt, stats, condition=None, cfg_scale=0.0):
+    def _euler_maruyama_step(
+        self,
+        x_r,
+        x_i,
+        t_value,
+        dt,
+        stats,
+        condition=None,
+        cfg_scale=0.0,
+        add_noise=True,
+    ):
         """One reverse VP-SDE Euler-Maruyama step for spectral R/I branches."""
         batch = x_r.shape[0]
         t = torch.full((batch,), float(t_value), device=self.device)
@@ -157,11 +169,15 @@ class QuaSiD_cont(QuaSiD):
         reverse_drift_i = f_i - g_t.pow(2) * sigma_score_i
 
         dt_scale = torch.sqrt(torch.tensor(abs(dt), device=self.device))
+        # Consume the same random draws when noise is omitted so later batches stay paired.
         dw_r = torch.randn_like(x_r) * dt_scale * torch.sqrt(stats["var_r"])
         dw_i = torch.randn_like(x_i) * dt_scale * torch.sqrt(stats["var_i"])
 
-        next_r = x_r + reverse_drift_r * dt + g_t * dw_r
-        next_i = x_i + reverse_drift_i * dt + g_t * dw_i
+        next_r = x_r + reverse_drift_r * dt
+        next_i = x_i + reverse_drift_i * dt
+        if add_noise:
+            next_r = next_r + g_t * dw_r
+            next_i = next_i + g_t * dw_i
         return next_r, next_i * (stats["var_i"] > 0)
 
     @torch.no_grad()
@@ -180,5 +196,6 @@ class QuaSiD_cont(QuaSiD):
                 stats,
                 condition=condition,
                 cfg_scale=cfg_scale,
+                add_noise=self.final_step_noise or step < int(num_steps) - 1,
             )
         return x_r, x_i, stats

@@ -97,6 +97,7 @@ def test_v5_wrappers_train_and_sample_across_task_contracts(model_cls, case):
     length = 25 if case == "odd" else 24
     model = model_cls(
         seq_length=length, channels=2, max_step=8, sampling_steps=2,
+        final_step_noise=False,
         backbone="dit_solver_v5", use_pmi_corr=True, corr_rank=3,
         emb_size=32, num_layers=2, device="cpu", attn_backend="sdpa",
         freq_keep_ratio=0.5 if case == "cropped" else 1.0,
@@ -146,3 +147,46 @@ def test_v5_pmi_requires_diffusion_scaling(missing):
     args.pop(missing)
     with pytest.raises(ValueError, match="requires noise_scale and spectral_variance"):
         model(torch.randn(2, 7, 2), torch.randn(2, 7, 2), torch.ones(2), **args)
+
+
+@pytest.mark.parametrize("num_steps", [1, 3])
+def test_cont_final_step_noise_preserves_drift_and_random_stream(monkeypatch, num_steps):
+    model = QuaSiD_cont(
+        seq_length=24, channels=2, emb_size=32, num_layers=1,
+        device="cpu", attn_backend="sdpa",
+    )
+    monkeypatch.setattr(
+        model, "_predict_noise",
+        lambda x_r, x_i, *args, **kwargs: (torch.zeros_like(x_r), torch.zeros_like(x_i)),
+    )
+    states = []
+    original_step = model._euler_maruyama_step
+
+    def record_step(x_r, x_i, t_value, dt, stats, **kwargs):
+        states.append((x_r.clone(), x_i.clone(), t_value, dt, kwargs["add_noise"]))
+        return original_step(x_r, x_i, t_value, dt, stats, **kwargs)
+
+    monkeypatch.setattr(model, "_euler_maruyama_step", record_step)
+    assert model.final_step_noise is False
+    model.final_step_noise = True
+    torch.manual_seed(41)
+    baseline = model._sample_spectrum(2, num_steps)
+    baseline_rng = torch.get_rng_state()
+    baseline_states = states.copy()
+    assert all(state[4] for state in baseline_states)
+
+    model.final_step_noise = False
+    states.clear()
+    torch.manual_seed(41)
+    actual_r, actual_i, stats = model._sample_spectrum(2, num_steps)
+    assert torch.equal(torch.get_rng_state(), baseline_rng)
+    assert [state[4] for state in states] == [True] * (num_steps - 1) + [False]
+    for baseline_state, actual_state in zip(baseline_states, states):
+        assert torch.equal(baseline_state[0], actual_state[0])
+        assert torch.equal(baseline_state[1], actual_state[1])
+
+    last_r, last_i, t_value, dt, _ = states[-1]
+    beta = model.get_beta(torch.tensor(t_value))
+    torch.testing.assert_close(actual_r, last_r - 0.5 * beta * last_r * dt)
+    torch.testing.assert_close(actual_i, (last_i - 0.5 * beta * last_i * dt) * (stats["var_i"] > 0))
+    assert not torch.equal(actual_r, baseline[0])

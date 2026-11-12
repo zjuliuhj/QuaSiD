@@ -27,6 +27,7 @@ class QuaSiD_disc(QuaSiD):
         beta_min=None,
         beta_max=None,
         time_eps=None,
+        final_step_noise=None,
         condition_dim=128,
         backbone="dit_solver_v5",
         use_pmi_corr=True,
@@ -44,9 +45,9 @@ class QuaSiD_disc(QuaSiD):
         device="cuda",
         **kwargs,
     ):
-        # Accept SDE-only schedule fields so one unconditional YAML schema can
+        # Accept SDE-only fields so one YAML schema can
         # switch wrappers through `model.target`; DDPM owns its discrete schedule.
-        del beta_min, beta_max, time_eps
+        del beta_min, beta_max, time_eps, final_step_noise
         super().__init__(
             seq_length=seq_length,
             channels=channels,

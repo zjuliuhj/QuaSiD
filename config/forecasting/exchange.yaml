@@ -6,6 +6,7 @@ model:
     condition_domain: frequency
     max_step: 500
     sampling_steps: 200
+    final_step_noise: false
     cfg_scale: 2.5
     freq_keep_ratio: 1.0
     backbone: dit_solver_v5

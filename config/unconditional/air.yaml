@@ -5,6 +5,7 @@ model:
     channels: 13
     max_step: 2500
     sampling_steps: 1000
+    final_step_noise: false
     cfg_scale: 0.0
     beta_min: 0.1
     beta_max: 20.0
