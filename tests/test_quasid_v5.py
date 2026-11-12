@@ -97,7 +97,7 @@ def test_v5_wrappers_train_and_sample_across_task_contracts(model_cls, case):
     length = 25 if case == "odd" else 24
     model = model_cls(
         seq_length=length, channels=2, max_step=8, sampling_steps=2,
-        final_step_noise=False,
+        sampler="ode",
         backbone="dit_solver_v5", use_pmi_corr=True, corr_rank=3,
         emb_size=32, num_layers=2, device="cpu", attn_backend="sdpa",
         freq_keep_ratio=0.5 if case == "cropped" else 1.0,
@@ -150,7 +150,7 @@ def test_v5_pmi_requires_diffusion_scaling(missing):
 
 
 @pytest.mark.parametrize("num_steps", [1, 3])
-def test_cont_final_step_noise_preserves_drift_and_random_stream(monkeypatch, num_steps):
+def test_cont_sde_omits_noise_only_on_last_step(monkeypatch, num_steps):
     model = QuaSiD_cont(
         seq_length=24, channels=2, emb_size=32, num_layers=1,
         device="cpu", attn_backend="sdpa",
@@ -167,26 +167,70 @@ def test_cont_final_step_noise_preserves_drift_and_random_stream(monkeypatch, nu
         return original_step(x_r, x_i, t_value, dt, stats, **kwargs)
 
     monkeypatch.setattr(model, "_euler_maruyama_step", record_step)
-    assert model.final_step_noise is False
-    model.final_step_noise = True
-    torch.manual_seed(41)
-    baseline = model._sample_spectrum(2, num_steps)
-    baseline_rng = torch.get_rng_state()
-    baseline_states = states.copy()
-    assert all(state[4] for state in baseline_states)
-
-    model.final_step_noise = False
-    states.clear()
     torch.manual_seed(41)
     actual_r, actual_i, stats = model._sample_spectrum(2, num_steps)
-    assert torch.equal(torch.get_rng_state(), baseline_rng)
     assert [state[4] for state in states] == [True] * (num_steps - 1) + [False]
-    for baseline_state, actual_state in zip(baseline_states, states):
-        assert torch.equal(baseline_state[0], actual_state[0])
-        assert torch.equal(baseline_state[1], actual_state[1])
 
     last_r, last_i, t_value, dt, _ = states[-1]
     beta = model.get_beta(torch.tensor(t_value))
     torch.testing.assert_close(actual_r, last_r - 0.5 * beta * last_r * dt)
     torch.testing.assert_close(actual_i, (last_i - 0.5 * beta * last_i * dt) * (stats["var_i"] > 0))
-    assert not torch.equal(actual_r, baseline[0])
+
+
+@pytest.mark.parametrize("length,num_steps", [(24, 1), (25, 200)])
+def test_cont_ode_recovers_clean_spectrum_with_exact_noise(monkeypatch, length, num_steps):
+    model = QuaSiD_cont(
+        seq_length=length, channels=2, emb_size=32, num_layers=1,
+        sampler="ode", device="cpu", attn_backend="sdpa",
+    )
+    clean_r, clean_i, stats = model._initial_spectrum_state(2)
+    calls = []
+
+    def exact_noise(x_r, x_i, t, stats, **kwargs):
+        calls.append(t.clone())
+        mean, noise_scale = model.get_marginal_prob(t)
+        return (x_r - mean * clean_r) / noise_scale, (x_i - mean * clean_i) / noise_scale
+
+    monkeypatch.setattr(model, "_predict_noise", exact_noise)
+    actual_r, actual_i, _ = model._sample_spectrum(2, num_steps)
+    assert len(calls) == num_steps
+    assert all(torch.all(t > 0) for t in calls)
+    torch.testing.assert_close(actual_r, clean_r, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(actual_i, clean_i, atol=1e-5, rtol=1e-5)
+    assert torch.count_nonzero(actual_i[:, 0]) == 0
+
+
+@pytest.mark.parametrize("sampler", ["ode", "sde"])
+def test_disc_sampler_controls_step_noise(monkeypatch, sampler):
+    model = QuaSiD_disc(
+        seq_length=24, channels=2, max_step=8, emb_size=32, num_layers=1,
+        sampler=sampler, device="cpu", attn_backend="sdpa",
+    )
+    x_r, x_i, stats = model._initial_spectrum_state(2)
+    monkeypatch.setattr(
+        model, "_predict_noise",
+        lambda x_r, x_i, *args, **kwargs: (torch.zeros_like(x_r), torch.zeros_like(x_i)),
+    )
+    torch.manual_seed(23)
+    before = torch.get_rng_state()
+    first = model._ddpm_step(x_r, x_i, 7, 3, stats)
+    after = torch.get_rng_state()
+    second = model._ddpm_step(x_r, x_i, 7, 3, stats)
+    assert torch.equal(before, after) == (sampler == "ode")
+    assert torch.equal(first[0], second[0]) == (sampler == "ode")
+    if sampler == "ode":
+        alpha = torch.sqrt(model.ddpm.alpha_bar[3] / model.ddpm.alpha_bar[7])
+        torch.testing.assert_close(first[0], alpha * x_r)
+    assert torch.count_nonzero(first[1][:, (0, -1)]) == 0
+
+    before_terminal = torch.get_rng_state()
+    terminal_r, terminal_i = model._ddpm_step(x_r, x_i, 0, -1, stats)
+    assert torch.equal(before_terminal, torch.get_rng_state())
+    torch.testing.assert_close(terminal_r, x_r / torch.sqrt(model.ddpm.alpha_bar[0]))
+    assert torch.count_nonzero(terminal_i[:, (0, -1)]) == 0
+
+
+@pytest.mark.parametrize("model_cls", [QuaSiD_cont, QuaSiD_disc])
+def test_wrappers_reject_unknown_sampler(model_cls):
+    with pytest.raises(ValueError, match="sampler must be 'sde' or 'ode'"):
+        model_cls(seq_length=24, channels=2, sampler="ddim", device="cpu")

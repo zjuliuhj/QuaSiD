@@ -14,11 +14,38 @@ All model code lives in [models/quasid/](models/quasid/). The public model ident
 | Continuous VP-SDE | `quasid_cont` | `models.quasid.quasid_cont.QuaSiD_cont` |
 | Discrete DDPM | `quasid_disc` | `models.quasid.quasid_disc.QuaSiD_disc` |
 
-[quasid.py](models/quasid/quasid.py) provides the shared `QuaSiD` base class, condition encoder, orthonormal rFFT transforms, spectral noise covariance, and noise-prediction loss. The [QuaSiD backbone](models/quasid/dit_solver_v5.py) implements the separate real and imaginary DiT streams; [dit_blocks.py](models/quasid/dit_blocks.py) contains their shared quadrature PMI correction. The SDE wrapper uses Euler–Maruyama reverse sampling, and the DDPM wrapper uses DDIM/generalized jump sampling.
+[quasid.py](models/quasid/quasid.py) provides the shared `QuaSiD` base class, condition encoder, orthonormal rFFT transforms, spectral noise covariance, and noise-prediction loss. The [QuaSiD backbone](models/quasid/dit_solver_v5.py) implements the separate real and imaginary DiT streams; [dit_blocks.py](models/quasid/dit_blocks.py) contains their shared quadrature PMI correction. Both diffusion wrappers select their generation integrator through `model.params.sampler`.
 
 ### Blockwise PMI correction
 
 Each DiT layer contains one `SharedQuadraturePMIBlock` operating on that layer's even/odd hidden states. The block uses two shared frequency encoders, six time/condition modulation vectors, and two linear decoders. Each branch fuses the correction as `hidden = hidden_dit - noise_scale * variance * score_pmi` before passing its output to the next layer. PMI modulation starts at zero, and the imaginary DC/Nyquist mask enforces the spectral constraints. Set `model.params.use_pmi_corr=false` to disable PMI.
+
+### Sampling configuration
+
+Set the sampling options under the existing `model.params` mapping for either diffusion wrapper:
+
+```yaml
+model:
+  params:
+    sampler: ode          # ode or sde
+    sampling_steps: 200
+```
+
+`model.target` selects the continuous VP-SDE or discrete DDPM training schedule. `sampler` selects how the trained model generates samples:
+
+| `sampler` | `quasid_cont` | `quasid_disc` |
+| --- | --- | --- |
+| `ode` | Probability-flow ODE integrated by continuous DDIM updates in `_ode_step()` | Deterministic DDIM with `eta=0` |
+| `sde` | Reverse SDE integrated by Euler–Maruyama updates in `_euler_maruyama_step()` | Stochastic generalized DDIM jumps with `eta=1` |
+
+Both wrappers dispatch from `_sample_spectrum()`. The [continuous wrapper](models/quasid/quasid_cont.py) selects `_ode_step()` or `_euler_maruyama_step()`. The [discrete wrapper](models/quasid/quasid_disc.py) calls `_ddpm_step()` and `DDPM.ddim_sample()`, with `eta` determined by `sampler`.
+
+The `ode` options start from a random Gaussian state and add no fresh noise during integration. The `sde` options inject fresh noise at intermediate updates. The continuous SDE sampler always keeps only the drift update on its final step. Continuous ODE sampling and both discrete modes finish with a clean-signal prediction. Changing the seed can therefore change generated samples in either mode.
+
+- `sampling_steps` controls the number of reverse-generation updates. The discrete wrapper limits this value to the range from 1 to `max_step`.
+- `max_step` sets the discrete diffusion-chain length for `quasid_disc` and the backbone time-embedding scale for `quasid_cont`. `solver.train_steps` sets the number of optimizer updates.
+
+Bundled YAML files declare `sampler` explicitly. If it is omitted, `quasid_cont` defaults to `sde`, and `quasid_disc` defaults to `ode`. Switch `sampler` or `sampling_steps` at evaluation time using a checkpoint trained with the same diffusion wrapper, architecture, and noise schedule.
 
 ## Installation
 

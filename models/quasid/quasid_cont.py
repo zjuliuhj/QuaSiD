@@ -11,11 +11,9 @@ class QuaSiD_cont(QuaSiD):
 
     Uses the shared QuaSiD frequency-domain interface and owns only the
     continuous schedule: `t in [time_eps, 1]`, closed-form marginal noising, and
-    Euler-Maruyama reverse SDE sampling for R/I spectral branches.
+    reverse SDE or probability-flow ODE sampling for R/I spectral branches.
     """
 
-    sample_desc = "SDE Sampling"
-    conditional_desc = "Conditional SDE"
     conditional_default_steps = 50
 
     def __init__(
@@ -27,7 +25,7 @@ class QuaSiD_cont(QuaSiD):
         beta_min=0.1,
         beta_max=10.0,
         time_eps=1e-5,
-        final_step_noise=False,
+        sampler="sde",
         condition_dim=128,
         backbone="dit_solver_v5",
         use_pmi_corr=True,
@@ -51,6 +49,8 @@ class QuaSiD_cont(QuaSiD):
             raise ValueError("VP-SDE beta schedule requires 0 < beta_min <= beta_max.")
         if not 0.0 < time_eps < 1.0:
             raise ValueError(f"time_eps must be in (0, 1), got {time_eps}.")
+        if sampler not in {"sde", "ode"}:
+            raise ValueError(f"sampler must be 'sde' or 'ode', got {sampler!r}.")
         super().__init__(
             seq_length=seq_length,
             channels=channels,
@@ -75,7 +75,9 @@ class QuaSiD_cont(QuaSiD):
         self.beta_min = beta_min
         self.beta_max = beta_max
         self.time_eps = time_eps
-        self.final_step_noise = final_step_noise
+        self.sampler = sampler
+        self.sample_desc = f"{sampler.upper()} Sampling"
+        self.conditional_desc = f"Conditional {sampler.upper()}"
 
     def _model_timestep(self, t):
         """Scale continuous SDE time to the backbone embedding range `[0, max_step - 1]`."""
@@ -169,7 +171,7 @@ class QuaSiD_cont(QuaSiD):
         reverse_drift_i = f_i - g_t.pow(2) * sigma_score_i
 
         dt_scale = torch.sqrt(torch.tensor(abs(dt), device=self.device))
-        # Consume the same random draws when noise is omitted so later batches stay paired.
+        # Keep the random stream of the established SDE sampler across batches.
         dw_r = torch.randn_like(x_r) * dt_scale * torch.sqrt(stats["var_r"])
         dw_i = torch.randn_like(x_i) * dt_scale * torch.sqrt(stats["var_i"])
 
@@ -181,21 +183,57 @@ class QuaSiD_cont(QuaSiD):
         return next_r, next_i * (stats["var_i"] > 0)
 
     @torch.no_grad()
+    def _ode_step(
+        self,
+        x_r,
+        x_i,
+        t_value,
+        next_t_value,
+        stats,
+        condition=None,
+        cfg_scale=0.0,
+    ):
+        """Integrate the probability-flow ODE with a continuous DDIM update."""
+        t = torch.full((x_r.shape[0],), float(t_value), device=self.device)
+        next_t = torch.full_like(t, float(next_t_value))
+        mean, noise_scale = self.get_marginal_prob(t)
+        next_mean, next_noise_scale = self.get_marginal_prob(next_t)
+        eps_r, eps_i = self._predict_noise(
+            x_r,
+            x_i,
+            t,
+            stats,
+            noise_scale=noise_scale,
+            condition=condition,
+            cfg_scale=cfg_scale,
+        )
+        clean_r = (x_r - noise_scale * eps_r) / mean
+        clean_i = (x_i - noise_scale * eps_i) / mean
+        next_r = next_mean * clean_r + next_noise_scale * eps_r
+        next_i = next_mean * clean_i + next_noise_scale * eps_i
+        return next_r, next_i * (stats["var_i"] > 0)
+
+    @torch.no_grad()
     def _sample_spectrum(self, batch_size, num_steps, condition=None, cfg_scale=0.0, desc="SDE Sampling"):
-        """Sample R/I spectrum by integrating the reverse SDE from 1 to time_eps."""
+        """Sample R/I spectrum with the selected continuous-time integrator."""
+        num_steps = int(num_steps)
         x_r, x_i, stats = self._initial_spectrum_state(batch_size)
-        time_steps = torch.linspace(1.0, self.time_eps, int(num_steps) + 1, device=self.device)
-        for step in tqdm(range(int(num_steps)), desc=desc, disable=not sys.stderr.isatty()):
+        time_steps = torch.linspace(1.0, self.time_eps, num_steps + 1, device=self.device)
+        if self.sampler == "ode":
+            # The final update predicts x_0 without evaluating the score at zero noise.
+            time_steps[-1] = 0.0
+        for step in tqdm(range(num_steps), desc=desc, disable=not sys.stderr.isatty()):
             t_value = float(time_steps[step].item())
-            dt = float((time_steps[step + 1] - time_steps[step]).item())
-            x_r, x_i = self._euler_maruyama_step(
-                x_r,
-                x_i,
-                t_value,
-                dt,
-                stats,
-                condition=condition,
-                cfg_scale=cfg_scale,
-                add_noise=self.final_step_noise or step < int(num_steps) - 1,
-            )
+            if self.sampler == "ode":
+                x_r, x_i = self._ode_step(
+                    x_r, x_i, t_value, float(time_steps[step + 1].item()), stats,
+                    condition=condition, cfg_scale=cfg_scale,
+                )
+            else:
+                dt = float((time_steps[step + 1] - time_steps[step]).item())
+                x_r, x_i = self._euler_maruyama_step(
+                    x_r, x_i, t_value, dt, stats,
+                    condition=condition, cfg_scale=cfg_scale,
+                    add_noise=step < num_steps - 1,
+                )
         return x_r, x_i, stats

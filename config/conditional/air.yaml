@@ -7,7 +7,7 @@ model:
     condition_domain: embedding
     max_step: 500
     sampling_steps: 200
-    final_step_noise: false
+    sampler: sde
     cfg_scale: 2.5
     beta_min: 0.1
     beta_max: 10.0

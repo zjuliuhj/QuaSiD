@@ -15,9 +15,6 @@ class QuaSiD_disc(QuaSiD):
     and DDIM/generalized jump reverse sampling for R/I spectral branches.
     """
 
-    sample_desc = "DDPM Sampling"
-    conditional_desc = "Conditional DDPM"
-
     def __init__(
         self,
         seq_length,
@@ -27,7 +24,7 @@ class QuaSiD_disc(QuaSiD):
         beta_min=None,
         beta_max=None,
         time_eps=None,
-        final_step_noise=None,
+        sampler="ode",
         condition_dim=128,
         backbone="dit_solver_v5",
         use_pmi_corr=True,
@@ -36,7 +33,6 @@ class QuaSiD_disc(QuaSiD):
         inst_norm_eps=1e-5,
         freq_keep_ratio=1.0,
         freq_keep_bins=None,
-        ddim_eta=0.0,
         condition_domain="frequency",
         channel_indep=False,
         emb_size=128,
@@ -47,7 +43,9 @@ class QuaSiD_disc(QuaSiD):
     ):
         # Accept SDE-only fields so one YAML schema can
         # switch wrappers through `model.target`; DDPM owns its discrete schedule.
-        del beta_min, beta_max, time_eps, final_step_noise
+        del beta_min, beta_max, time_eps
+        if sampler not in {"sde", "ode"}:
+            raise ValueError(f"sampler must be 'sde' or 'ode', got {sampler!r}.")
         super().__init__(
             seq_length=seq_length,
             channels=channels,
@@ -69,7 +67,10 @@ class QuaSiD_disc(QuaSiD):
             device=device,
             **kwargs,
         )
-        self.ddim_eta = float(ddim_eta)
+        self.sampler = sampler
+        sampling_name = "DDIM" if sampler == "ode" else "DDPM"
+        self.sample_desc = f"{sampling_name} Sampling"
+        self.conditional_desc = f"Conditional {sampling_name}"
         self.ddpm = DDPM(self.max_step, device)
 
     def forward(self, data, **kwargs):
@@ -117,7 +118,7 @@ class QuaSiD_disc(QuaSiD):
             t,
             t_next,
             noise_scale=torch.sqrt(stats["var_r"]),
-            eta=self.ddim_eta,
+            eta=0.0 if self.sampler == "ode" else 1.0,
         )
         next_i = self.ddpm.ddim_sample(
             x_i,
@@ -125,7 +126,7 @@ class QuaSiD_disc(QuaSiD):
             t,
             t_next,
             noise_scale=torch.sqrt(stats["var_i"]),
-            eta=self.ddim_eta,
+            eta=0.0 if self.sampler == "ode" else 1.0,
         )
         return next_r, next_i * (stats["var_i"] > 0)
 
