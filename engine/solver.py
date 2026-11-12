@@ -60,6 +60,9 @@ class Trainer(object):
         self.train_model = self.model.module if self.distributed else self.model
         self.train_num_steps = config['solver']['train_steps']
         self.grad_accum_every = config['solver']['grad_accum_every']
+        self.log_interval = int(config['solver'].get('log_interval', 50))
+        if self.log_interval < 1:
+            raise ValueError('solver.log_interval must be positive.')
         self.ckpt_count = int(config['solver'].get('ckpt_count', 5))
         self.save_cycle = int(config['solver'].get(
             'save_cycle',
@@ -89,6 +92,8 @@ class Trainer(object):
         sc_cfg = copy.deepcopy(config['solver']['scheduler'])
         sc_cfg['params']['optimizer'] = self.opt
         self.sch = instantiate_from_config(sc_cfg)
+        # Unknown schedulers keep the previous metric-driven behavior.
+        self.scheduler_requires_metric = bool(getattr(self.sch, 'requires_metric', True))
 
         self.mixed_precision = str(config['solver'].get('mixed_precision', 'no')).lower()
         self.use_amp = self.device.type == "cuda" and self.mixed_precision in {"fp16", "bf16"}
@@ -100,16 +105,11 @@ class Trainer(object):
                 parameter.numel() for parameter in self.train_model.parameters() if parameter.requires_grad
             )
             total_parameter_count = sum(parameter.numel() for parameter in self.train_model.parameters())
-            self.logger.add_scalar(
-                tag="model/trainable_parameters",
-                scalar_value=trainable_parameter_count,
-                global_step=self.step,
-            )
-            self.logger.add_scalar(
-                tag="model/total_parameters",
-                scalar_value=total_parameter_count,
-                global_step=self.step,
-            )
+            if self.logger.enabled and getattr(args, 'train', True):
+                self.logger.log_scalars({
+                    'model/trainable_parameters': trainable_parameter_count,
+                    'model/total_parameters': total_parameter_count,
+                }, self.step)
             self.logger.log_info(str(get_model_parameters_info(self.train_model)))
             self.logger.log_info(
                 "Batch size. global: {} | local_per_gpu: {} | world_size: {}".format(
@@ -128,13 +128,16 @@ class Trainer(object):
             dist.barrier(device_ids=[self.local_rank])
 
     def _mean_across_ranks(self, value):
-        """Average a scalar metric across all DDP ranks; return the local value in single-process runs."""
-        if not self.distributed:
-            return float(value)
-        tensor = torch.tensor(float(value), device=self.device)
-        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
-        tensor /= self.world_size
-        return float(tensor.item())
+        """Reduce detached metrics on device without a CPU/GPU round trip."""
+        tensor = value.detach().clone()
+        if self.distributed:
+            dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+            tensor /= self.world_size
+        return tensor
+
+    def _synchronize_device(self):
+        if self.device.type == 'cuda':
+            torch.cuda.synchronize(self.device)
 
     def _conditional_inst_stats(self, x_raw, condition):
         """Return per-sample stats from a sequence condition or conditional target."""
@@ -187,89 +190,100 @@ class Trainer(object):
         data_iter = iter(self.dl)
         self.model.train()
 
+        show_progress = self.is_main_process and sys.stderr.isatty()
+        track_metrics = show_progress or (self.logger is not None and self.logger.enabled)
+        if self.distributed:
+            # All ranks must make the same decision about metric collectives.
+            flag = torch.tensor(int(track_metrics), device=self.device)
+            dist.broadcast(flag, src=0)
+            track_metrics = bool(flag.item())
+        window_metrics = torch.zeros(2, dtype=torch.float64, device=self.device) if track_metrics else None
+        window_steps = 0
+        self._synchronize_device()
+        initial_elapsed = self.elapsed_train_seconds
+        training_start = last_report_time = time.perf_counter()
+
         progress = tqdm(
-            initial=self.step,
-            total=self.train_num_steps,
-            desc='Training',
-            disable=not self.is_main_process,
+            initial=self.step, total=self.train_num_steps, desc='Training',
+            disable=not show_progress, mininterval=1.0,
         )
         with progress as pbar:
             while self.step < self.train_num_steps:
-                step_start_time = time.perf_counter()
-                total_loss_step = 0.
+                total_loss_step = None
                 for _ in range(self.grad_accum_every):
-                    data = next(data_iter)
-                    data = self._move_batch_to_device(data)
-
+                    data = self._move_batch_to_device(next(data_iter))
                     with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype, enabled=self.use_amp):
                         loss = self.model(data)
                     loss = loss / self.grad_accum_every
                     self.scaler.scale(loss).backward()
-                    total_loss_step += loss.item()
+                    if track_metrics or self.scheduler_requires_metric:
+                        # Accumulate detached values on device. Double precision
+                        # preserves the previous sum of Python loss scalars.
+                        value = loss.detach().double()
+                        total_loss_step = value if total_loss_step is None else total_loss_step + value
 
-                total_loss_step = self._mean_across_ranks(total_loss_step)
-
-                if self.is_main_process:
-                    pbar.set_description(f'loss: {total_loss_step:.6f}')
+                scheduler_metric = None
+                if self.scheduler_requires_metric:
+                    # Plateau schedules genuinely require a global loss each step.
+                    scheduler_metric = self._mean_across_ranks(total_loss_step).item()
 
                 self.scaler.unscale_(self.opt)
                 grad_norm = clip_grad_norm_(self.model.parameters(), 1.0)
                 self.scaler.step(self.opt)
                 self.scaler.update()
-                self.sch.step(total_loss_step)
+                if self.scheduler_requires_metric:
+                    self.sch.step(scheduler_metric)
+                else:
+                    self.sch.step()
                 self.opt.zero_grad()
                 self.ema.update()
                 self.step += 1
-                # loss.item() and grad_norm.cpu() above synchronize CUDA work,
-                # so this measures end-to-end optimizer-step wall time without
-                # an additional device synchronization.
-                step_time_seconds = time.perf_counter() - step_start_time
-                self.elapsed_train_seconds += step_time_seconds
 
-                if self.logger is not None:
-                    self.logger.add_scalar(tag="train/loss", scalar_value=total_loss_step, global_step=self.step)
-                    self.logger.add_scalar(
-                        tag="train/lr",
-                        scalar_value=self.opt.param_groups[0]["lr"],
-                        global_step=self.step,
-                    )
-                    self.logger.add_scalar(
-                        tag="train/grad_norm",
-                        scalar_value=float(grad_norm.detach().cpu()),
-                        global_step=self.step,
-                    )
-                    self.logger.add_scalar(
-                        tag="train/step_time_s",
-                        scalar_value=step_time_seconds,
-                        global_step=self.step,
-                    )
-                    self.logger.add_scalar(
-                        tag="train/elapsed_time_s",
-                        scalar_value=self.elapsed_train_seconds,
-                        global_step=self.step,
-                    )
-                    self.logger.add_scalar(
-                        tag="train/throughput_samples_per_s",
-                        scalar_value=self.samples_per_optimizer_step / max(step_time_seconds, 1e-12),
-                        global_step=self.step,
-                    )
-                    self.logger.add_scalar(
-                        tag="train/samples_seen",
-                        scalar_value=self.step * self.samples_per_optimizer_step,
-                        global_step=self.step,
-                    )
+                if track_metrics:
+                    window_metrics[0].add_(total_loss_step)
+                    window_metrics[1].add_(grad_norm.detach())
+                    window_steps += 1
 
                 if self.step % self.save_cycle == 0:
                     self.milestone += 1
+                    self._synchronize_device()
+                    self.elapsed_train_seconds = initial_elapsed + time.perf_counter() - training_start
                     self.save(self.milestone)
 
+                if track_metrics and (self.step % self.log_interval == 0 or self.step == self.train_num_steps):
+                    metrics = self._mean_across_ranks(window_metrics) / window_steps
+                    self._synchronize_device()
+                    if self.is_main_process:
+                        # One transfer per reporting window; nothing is fetched
+                        # for TensorBoard when it and terminal progress are off.
+                        mean_loss, mean_grad_norm = metrics.cpu().tolist()
+                        now = time.perf_counter()
+                        window_seconds = max(now - last_report_time, 1e-12)
+                        self.elapsed_train_seconds = initial_elapsed + now - training_start
+                        if self.logger is not None and self.logger.enabled:
+                            self.logger.log_scalars({
+                                'train/loss': mean_loss,
+                                'train/lr': self.opt.param_groups[0]['lr'],
+                                'train/grad_norm': mean_grad_norm,
+                                'train/step_time_s': window_seconds / window_steps,
+                                'train/elapsed_time_s': self.elapsed_train_seconds,
+                                'train/throughput_samples_per_s': self.samples_per_optimizer_step * window_steps / window_seconds,
+                                'train/samples_seen': self.step * self.samples_per_optimizer_step,
+                            }, self.step)
+                        pbar.set_description(f'loss: {mean_loss:.6f}', refresh=False)
+                        # The next window includes this report's submission time.
+                        last_report_time = now
+                    window_metrics.zero_()
+                    window_steps = 0
                 pbar.update(1)
 
+        self._synchronize_device()
+        self._barrier()
+        self.elapsed_train_seconds = initial_elapsed + time.perf_counter() - training_start
         if self.is_main_process:
             print('training complete')
         if self.logger is not None:
             self.logger.log_info(f'Training Done. Total Steps: {self.step}')
-        self._barrier()
 
     def sample(self, num, size_every):
         """Generate unconditional samples in chunks with the EMA model."""

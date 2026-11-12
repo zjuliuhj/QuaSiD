@@ -45,6 +45,8 @@ class ReduceLROnPlateauWithWarmup(object):
         warmup: int, the number of steps to warmup
     """
 
+    requires_metric = True
+
     def __init__(self, optimizer, mode='min', factor=0.1, patience=10,
                  threshold=1e-4, threshold_mode='rel', cooldown=0,
                  min_lr=0, eps=1e-8, verbose=False, warmup_lr=None,
@@ -208,6 +210,8 @@ class CosineAnnealingLRWithWarmup(object):
     the default -1 starts from zero. An optional metric is accepted for
     compatibility with the trainer's scheduler.step(loss) call.
     """
+
+    requires_metric = False
 
     def __init__(self, optimizer, T_max, last_epoch=-1, verbose=False,
                  min_lr=0, warmup_lr=None, warmup=0):

@@ -199,6 +199,39 @@ across these evaluation seeds, not across independently trained models.
 Learned metrics such as Context-FID, discriminative score, and predictive score
 train additional networks and may take substantial time.
 
+## TensorBoard performance
+
+Training logs window-averaged loss and gradient norm every 50 optimizer steps
+and at the final step. The seven training scalars share one event; their tag
+names remain compatible with existing dashboards. This reduces both event
+writing and the amount TensorBoard needs to read. No metrics are copied to CPU
+for logging when TensorBoard and terminal progress are disabled. Plateau LR
+schedulers still consume a global loss every step; cosine schedules do not.
+
+Optional YAML settings under `solver` (also accepted as trailing CLI overrides):
+
+```yaml
+log_interval: 50
+tensorboard_max_queue: 1000
+tensorboard_flush_secs: 120
+```
+
+For example, append `solver.log_interval 100` to `train_eval.sh` to log every
+100 steps. Set `TENSORBOARD=false` on the shell launchers to disable event output.
+Training durations use synchronized reporting windows, including earlier log
+submissions and checkpoint writes, rather than unsynchronized per-step timers.
+Progress bars refresh only in interactive terminals. Evaluation creates an
+event writer only when a metric is actually emitted.
+
+Point TensorBoard at the specific experiment(s) you want to inspect, rather than
+recursively loading every archived run:
+
+```bash
+tensorboard --logdir experiments/uncond/pacodi_sde/Quito --reload_interval 30
+```
+
+Existing event files are preserved; these reductions apply to new runs.
+
 ## Repository layout
 
 ```text

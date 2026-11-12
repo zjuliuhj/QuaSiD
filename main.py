@@ -177,7 +177,7 @@ def main():
         cleanup_distributed(args)
         return
 
-    logger = Logger(args) if args.is_main_process else None
+    logger = Logger(args, config['solver']) if args.is_main_process else None
     if logger is not None:
         logger.save_config(config)
 
