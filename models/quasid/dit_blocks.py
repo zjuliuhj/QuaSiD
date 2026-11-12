@@ -48,17 +48,13 @@ class SDPAAttention(nn.Module):
                 )
             with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
                 return F.scaled_dot_product_attention(
-                    q,
-                    k,
-                    v,
+                    q, k, v,
                     dropout_p=dropout_p,
                     is_causal=False,
                 )
 
         return F.scaled_dot_product_attention(
-            q,
-            k,
-            v,
+            q, k, v,
             dropout_p=dropout_p,
             is_causal=False,
         )

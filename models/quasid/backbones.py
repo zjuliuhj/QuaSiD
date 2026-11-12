@@ -1,10 +1,10 @@
 import inspect
 
-from models.quasid.dit_solver_v5 import DiTSolverV5
+from models.quasid.dit_solver_v5 import DiTSolver
 
 
 BACKBONE_REGISTRY = {
-    "dit_solver_v5": DiTSolverV5,
+    "dit_solver_v5": DiTSolver,
 }
 
 

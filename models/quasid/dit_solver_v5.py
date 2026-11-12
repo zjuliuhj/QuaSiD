@@ -7,7 +7,7 @@ from models.quasid.dit_blocks import ParallelDiTLayer, SharedQuadraturePMIBlock
 from models.quasid.dit_common import TimeEmbedding, get_sinusoidal_positional_embeddings
 
 
-class DiTSolverV5Layer(nn.Module):
+class DiTSolverLayer(nn.Module):
     """Apply branch-local DiT updates with optional hidden-space PMI fusion."""
 
     def __init__(
@@ -53,7 +53,7 @@ class DiTSolverV5Layer(nn.Module):
         )
 
 
-class DiTSolverV5(nn.Module):
+class DiTSolver(nn.Module):
     """Independent DiT streams with blockwise or output-level PMI correction."""
 
     def __init__(
@@ -83,7 +83,7 @@ class DiTSolverV5(nn.Module):
         self.conv_i = nn.Conv1d(channels, emb_size, kernel_size=1)
         self.pos_embed = None
         self.layers = nn.ModuleList([
-            DiTSolverV5Layer(
+            DiTSolverLayer(
                 d_model=emb_size, spectrum_bins=spectrum_bins,
                 use_pmi_corr=use_pmi_corr and pmi_mode == "blockwise",
                 corr_rank=corr_rank, attn_backend=attn_backend,

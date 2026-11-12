@@ -3,7 +3,7 @@ import torch
 
 from models.quasid.backbones import build_backbone
 from models.quasid.dit_blocks import SharedQuadraturePMIBlock
-from models.quasid.dit_solver_v5 import DiTSolverV5, DiTSolverV5Layer
+from models.quasid.dit_solver_v5 import DiTSolver, DiTSolverLayer
 from models.quasid.quasid_disc import QuaSiD_disc
 from models.quasid.quasid_cont import QuaSiD_cont
 
@@ -70,7 +70,7 @@ def test_backbone_initialization_keeps_all_pmi_blocks_exactly_zero(pmi_mode):
         "dit_solver_v5", channels=2, emb_size=32, spectrum_bins=7,
         num_layers=2, corr_rank=2, attn_backend="sdpa", pmi_mode=pmi_mode,
     )
-    assert isinstance(model, DiTSolverV5)
+    assert isinstance(model, DiTSolver)
     blocks = [module for module in model.modules() if isinstance(module, SharedQuadraturePMIBlock)]
     assert len(blocks) == (2 if pmi_mode == "blockwise" else 1)
     for block in blocks:
@@ -79,7 +79,7 @@ def test_backbone_initialization_keeps_all_pmi_blocks_exactly_zero(pmi_mode):
 
 
 def test_v5_pmi_receives_condition_context():
-    layer = DiTSolverV5Layer(32, 7, corr_rank=2, attn_backend="sdpa")
+    layer = DiTSolverLayer(32, 7, corr_rank=2, attn_backend="sdpa")
     received = []
     handle = layer.pmi.register_forward_pre_hook(lambda module, args: received.append(args[2].detach()))
     c_r, c_i = torch.randn(2, 32), torch.randn(2, 32)
@@ -188,7 +188,7 @@ def test_independent_pmi_uses_raw_spectrum_and_fuses_after_backbone_heads():
 
 @pytest.mark.parametrize("missing", ["noise_scale", "spectral_variance"])
 def test_independent_pmi_requires_diffusion_scaling(missing):
-    model = DiTSolverV5(channels=2, emb_size=32, spectrum_bins=7, num_layers=1,
+    model = DiTSolver(channels=2, emb_size=32, spectrum_bins=7, num_layers=1,
                         pmi_mode="independent", attn_backend="sdpa")
     args = dict(noise_scale=torch.ones(2, 1, 1),
                 spectral_variance=(torch.ones(1, 7, 1), torch.ones(1, 7, 1)))
@@ -199,4 +199,4 @@ def test_independent_pmi_requires_diffusion_scaling(missing):
 
 def test_invalid_pmi_mode_is_rejected():
     with pytest.raises(ValueError, match="pmi_mode"):
-        DiTSolverV5(spectrum_bins=7, pmi_mode="invalid")
+        DiTSolver(spectrum_bins=7, pmi_mode="invalid")
