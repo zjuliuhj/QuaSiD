@@ -19,7 +19,7 @@ RUN_EVAL=${RUN_EVAL:-true}
 TENSORBOARD=${TENSORBOARD:-true}
 EVAL_ALL_CHECKPOINTS=${EVAL_ALL_CHECKPOINTS:-true}
 MILESTONE=${MILESTONE:-10}
-EVAL_SEEDS=${EVAL_SEEDS:-"2021,2022,2023,2024,2025"}
+EVAL_SEEDS=${EVAL_SEEDS:-"2022,2023,2024,2025,2026"}
 PYTHON_BIN=${PYTHON_BIN:-python}
 if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   echo "Python interpreter not found: ${PYTHON_BIN}. Set PYTHON_BIN to a valid interpreter." >&2

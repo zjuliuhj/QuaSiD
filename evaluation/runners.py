@@ -162,6 +162,7 @@ class UnconditionalEvaluator(EvaluationRunner):
                 predictive_iterations=self.args.predictive_iterations,
                 seed=self.args.seed,
                 device=getattr(self.args, "device", None),
+                dataset_name=self.args.dataset_name,
             )
             self.save_metrics(metrics)
 

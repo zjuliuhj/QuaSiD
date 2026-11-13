@@ -250,8 +250,13 @@ For a saved unconditional run, reproduce its original training overrides and use
 `RUN_TRAIN=false` with the same `EXP_NAME` in `train_eval.sh`.
 `EVAL_SEEDS` is a comma-separated list. The summary script reports statistics
 across these evaluation seeds, not across independently trained models.
-Learned metrics such as Context-FID, discriminative score, and predictive score
-train additional networks and may take substantial time.
+Context-FID, discriminative score (DS), and predictive score (PS) share evaluator checkpoints across generation seeds and models for the same dataset and horizon. Weights are loaded from `experiments/metric_checkpoints/`; a missing evaluator is trained once and saved.
+
+Checkpoints use `experiments/metric_checkpoints/<dataset>/horizon_<length>/<metric>_steps<iterations>_bs<batch>_<fingerprint>.pt`, where `<metric>` is `ds`, `ps`, or `ts2vec`. For example, ETTh1 at horizon 256 stores its discriminator as `etth1/horizon_256/ds_steps2000_bs128_<fingerprint>.pt`. The 16-character fingerprint identifies the real reference and evaluator settings, and filenames are shared across generation seeds and models.
+
+Cache keys include the fixed real metric subset, normalization, horizon, and training settings. The first generated batch supplies the training data for DS and PS; TS2Vec trains on the real reference only.
+
+With a fixed predictor and real reference, PS reports the same real-data MAE for each generated batch. DS and Context-FID evaluate each new generated batch.
 
 ## Repository layout
 

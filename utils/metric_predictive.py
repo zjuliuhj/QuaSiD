@@ -1,7 +1,7 @@
 """Predictive score for synthetic time-series evaluation.
 
-The metric follows the TimeGAN protocol: train a post-hoc recurrent predictor on
-generated data, then report one-step-ahead MAE on the original data.
+A recurrent predictor is trained on the first generated batch for a real
+reference, then reused to report one-step-ahead MAE on that reference.
 """
 
 import numpy as np
@@ -9,6 +9,8 @@ import sys
 import torch
 import torch.nn as nn
 from tqdm.auto import tqdm
+
+from utils.metric_common import load_metric_checkpoint, metric_checkpoint_path, save_metric_checkpoint
 
 
 class GRUPredictor(nn.Module):
@@ -71,6 +73,8 @@ def predictive_score_metrics(
     iterations=5000,
     batch_size=128,
     device=None,
+    checkpoint_dir="experiments/metric_checkpoints",
+    dataset_name="reference",
 ):
     """Report post-hoc one-step prediction MAE.
 
@@ -80,6 +84,8 @@ def predictive_score_metrics(
         iterations: optimizer steps for the post-hoc predictor.
         batch_size: mini-batch size for predictor training.
         device: optional torch device.
+        checkpoint_dir: evaluator cache directory; None disables checkpoint reuse.
+        dataset_name: dataset identifier used in checkpoint paths.
 
     Returns:
         MAE of predictions on original data.
@@ -94,21 +100,25 @@ def predictive_score_metrics(
 
     hidden_dim = max(1, input_dim // 2)
     model = GRUPredictor(input_dim=input_dim, hidden_dim=hidden_dim).to(device)
-    optimizer = torch.optim.Adam(model.parameters())
+    checkpoint_path = metric_checkpoint_path(
+        checkpoint_dir, "predictor", ori_data, iterations, batch_size, dataset_name
+    )
+    if not load_metric_checkpoint(model, checkpoint_path):
+        optimizer = torch.optim.Adam(model.parameters())
+        model.train()
+        train_size = len(generated_prepared)
+        effective_batch = min(batch_size, train_size)
+        for _ in tqdm(range(iterations), desc="training", disable=not sys.stderr.isatty()):
+            indices = np.random.permutation(train_size)[:effective_batch]
+            x, y, mask = _batch_to_tensors(generated_prepared, indices, device)
 
-    model.train()
-    train_size = len(generated_prepared)
-    effective_batch = min(batch_size, train_size)
-    for _ in tqdm(range(iterations), desc="training", total=iterations, disable=not sys.stderr.isatty()):
-        indices = np.random.permutation(train_size)[:effective_batch]
-        x, y, mask = _batch_to_tensors(generated_prepared, indices, device)
+            pred = model(x)
+            loss = torch.abs(pred - y)[mask].mean()
 
-        pred = model(x)
-        loss = torch.abs(pred - y)[mask].mean()
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        save_metric_checkpoint(model, checkpoint_path)
 
     model.eval()
     errors = []

@@ -1,7 +1,61 @@
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+
 import numpy as np
 from scipy.stats import wasserstein_distance as scipy_wasserstein_distance
+import torch
 
 from utils.metric_spectral import compute_spectral_energy_metrics
+
+
+def metric_checkpoint_path(
+    checkpoint_dir: str | Path | None,
+    metric: str,
+    reference_data,
+    iterations: int,
+    batch_size: int,
+    dataset_name: str = "reference",
+) -> Path | None:
+    """Share evaluator weights for the same real reference data and training settings."""
+    if checkpoint_dir is None:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", dataset_name):
+        raise ValueError(f"Invalid metric checkpoint dataset name: {dataset_name!r}")
+
+    settings = [2, metric, iterations, batch_size, torch.__version__]
+    digest = hashlib.sha256(json.dumps(settings).encode())
+    digest.update(np.asarray([len(reference_data)], dtype=np.int64).tobytes())
+    for sequence in reference_data:
+        sequence = np.ascontiguousarray(sequence, dtype=np.float32)
+        digest.update(np.asarray(sequence.shape, dtype=np.int64).tobytes())
+        digest.update(memoryview(sequence).cast("B"))
+    metric_name = {"discriminator": "ds", "predictor": "ps", "ts2vec": "ts2vec"}[metric]
+    horizon = reference_data[0].shape[0]
+    filename = f"{metric_name}_steps{iterations}_bs{batch_size}_{digest.hexdigest()[:16]}.pt"
+    return Path(checkpoint_dir) / dataset_name.lower() / f"horizon_{horizon}" / filename
+
+
+def load_metric_checkpoint(model: torch.nn.Module, path: Path | None) -> bool:
+    if path is None or not path.is_file():
+        return False
+
+    model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
+    print(f"Loaded {type(model).__name__} checkpoint: {path}", flush=True)
+    return True
+
+
+def save_metric_checkpoint(model: torch.nn.Module, path: Path | None) -> None:
+    if path is None:
+        return
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(f".{os.getpid()}.tmp")
+    torch.save(model.state_dict(), temporary_path)
+    temporary_path.replace(path)
+    print(f"Saved {type(model).__name__} checkpoint: {path}", flush=True)
 
 
 def _as_time_series(data):

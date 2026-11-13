@@ -27,24 +27,29 @@ def compute_unconditional_metrics(
     predictive_iterations=5000,
     seed=123,
     device=None,
+    dataset_name="reference",
 ):
     """Compute distribution, learned, and statistical metrics for unconditional samples."""
-    real_data, fake_data = paired_subset(real_data, fake_data, max_samples=max_samples, seed=seed)
+    # A fixed real subset lets all generation seeds and models share the evaluators.
+    real_data, fake_data = paired_subset(real_data, fake_data, max_samples=max_samples, seed=123)
     discriminative_score, fake_accuracy, real_accuracy = discriminative_score_metrics(
         real_data,
         fake_data,
         iterations=discriminative_iterations,
         device=device,
+        dataset_name=dataset_name,
     )
     predictive_score = predictive_score_metrics(
         real_data,
         fake_data,
         iterations=predictive_iterations,
         device=device,
+        dataset_name=dataset_name,
     )
+    context_score = context_fid(real_data, fake_data, device=device, dataset_name=dataset_name)
 
     return {
-        "context_fid": float(context_fid(real_data, fake_data, device=device)),
+        "context_fid": float(context_score),
         "cross_correlation": _cross_correlation(real_data, fake_data, seed),
         **compute_distribution_metrics(real_data, fake_data),
         **compute_statistical_metrics(real_data, fake_data),

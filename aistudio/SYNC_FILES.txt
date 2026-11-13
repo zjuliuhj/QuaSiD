@@ -69,6 +69,7 @@ scripts/smoke_v5.py
 tests/test_conditional_metric_scale.py
 tests/test_ema.py
 tests/test_logger.py
+tests/test_metric_checkpoint.py
 tests/test_quasid_v5.py
 tests/test_sine_dataset.py
 utils/ema.py

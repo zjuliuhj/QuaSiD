@@ -1,7 +1,7 @@
 """Discriminative score for synthetic time-series evaluation.
 
-The metric follows the TimeGAN protocol: train a post-hoc recurrent classifier
-to distinguish original and generated sequences, then report abs(acc - 0.5).
+A recurrent classifier is trained on the first real/generated pair and reused
+for the same real reference. The score is abs(acc - 0.5).
 """
 
 import numpy as np
@@ -9,6 +9,8 @@ import sys
 import torch
 import torch.nn as nn
 from tqdm.auto import tqdm
+
+from utils.metric_common import load_metric_checkpoint, metric_checkpoint_path, save_metric_checkpoint
 
 
 class GRUDiscriminator(nn.Module):
@@ -36,8 +38,9 @@ def _extract_time(data):
 
 
 def _train_test_divide(data_x, data_x_hat, data_t, data_t_hat, train_rate=0.8):
+    rng = np.random.default_rng(123)
     no = len(data_x)
-    idx = np.random.permutation(no)
+    idx = rng.permutation(no)
     train_idx = idx[: int(no * train_rate)]
     test_idx = idx[int(no * train_rate) :]
 
@@ -47,7 +50,7 @@ def _train_test_divide(data_x, data_x_hat, data_t, data_t_hat, train_rate=0.8):
     test_t = [data_t[i] for i in test_idx]
 
     no = len(data_x_hat)
-    idx = np.random.permutation(no)
+    idx = rng.permutation(no)
     train_idx = idx[: int(no * train_rate)]
     test_idx = idx[int(no * train_rate) :]
 
@@ -91,6 +94,8 @@ def discriminative_score_metrics(
     iterations=2000,
     batch_size=128,
     device=None,
+    checkpoint_dir="experiments/metric_checkpoints",
+    dataset_name="reference",
 ):
     """Use a post-hoc RNN classifier to separate original and synthetic data.
 
@@ -100,6 +105,8 @@ def discriminative_score_metrics(
         iterations: optimizer steps for the post-hoc discriminator.
         batch_size: mini-batch size for discriminator training.
         device: optional torch device.
+        checkpoint_dir: evaluator cache directory; None disables checkpoint reuse.
+        dataset_name: dataset identifier used in checkpoint paths.
 
     Returns:
         Tuple of (discriminative_score, fake_acc, real_acc).
@@ -123,23 +130,27 @@ def discriminative_score_metrics(
 
     hidden_dim = max(1, dim // 2)
     model = GRUDiscriminator(input_dim=dim, hidden_dim=hidden_dim).to(device)
-    optimizer = torch.optim.Adam(model.parameters())
-    criterion = nn.BCEWithLogitsLoss()
+    checkpoint_path = metric_checkpoint_path(
+        checkpoint_dir, "discriminator", ori_data, iterations, batch_size, dataset_name
+    )
+    if not load_metric_checkpoint(model, checkpoint_path):
+        optimizer = torch.optim.Adam(model.parameters())
+        criterion = nn.BCEWithLogitsLoss()
+        model.train()
+        for _ in tqdm(range(iterations), desc="training", disable=not sys.stderr.isatty()):
+            real_x, real_t = _sample_batch(train_x, train_t, batch_size, device)
+            fake_x, fake_t = _sample_batch(train_x_hat, train_t_hat, batch_size, device)
 
-    model.train()
-    for _ in tqdm(range(iterations), desc="training", total=iterations, disable=not sys.stderr.isatty()):
-        real_x, real_t = _sample_batch(train_x, train_t, batch_size, device)
-        fake_x, fake_t = _sample_batch(train_x_hat, train_t_hat, batch_size, device)
+            real_logit = model(real_x, real_t)
+            fake_logit = model(fake_x, fake_t)
+            real_label = torch.ones_like(real_logit)
+            fake_label = torch.zeros_like(fake_logit)
+            loss = criterion(real_logit, real_label) + criterion(fake_logit, fake_label)
 
-        real_logit = model(real_x, real_t)
-        fake_logit = model(fake_x, fake_t)
-        real_label = torch.ones_like(real_logit)
-        fake_label = torch.zeros_like(fake_logit)
-        loss = criterion(real_logit, real_label) + criterion(fake_logit, fake_label)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        save_metric_checkpoint(model, checkpoint_path)
 
     model.eval()
     with torch.no_grad():
