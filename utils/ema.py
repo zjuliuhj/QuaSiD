@@ -42,18 +42,3 @@ class EMA:
 
         for ema_buffer, buffer in zip(self.ema_model.buffers(), self.model.buffers()):
             ema_buffer.copy_(buffer)
-
-    def state_dict(self):
-        return {
-            "step": self.step,
-            "initted": self.initted,
-            "ema_model": self.ema_model.state_dict(),
-        }
-
-    def load_state_dict(self, state_dict):
-        self.step = int(state_dict.get("step", 0))
-        ema_state = state_dict.get("ema_model", state_dict)
-        self.ema_model.load_state_dict(ema_state)
-        # Checkpoints written before this fix already contain a valid EMA
-        # tensor state. Treat them as initialized for backward compatibility.
-        self.initted = bool(state_dict.get("initted", True))

@@ -3,9 +3,45 @@ import torch
 
 from models.quasid.backbones import build_backbone
 from models.quasid.dit_blocks import SharedQuadraturePMIBlock
+from models.quasid.dit_common import TimeEmbedding
 from models.quasid.dit_solver_v5 import DiTSolver, DiTSolverLayer
 from models.quasid.quasid_disc import QuaSiD_disc
 from models.quasid.quasid_cont import QuaSiD_cont
+
+
+def test_time_embedding_reuses_frequencies_and_preserves_checkpoint_keys(monkeypatch):
+    embedding = TimeEmbedding(32)
+    times = torch.tensor([0.0, 49.5, 499.0])
+    frequencies = torch.pow(10000, torch.linspace(0, 1, 16))
+    phase = times[:, None] / frequencies
+    expected = torch.cat([phase.sin(), phase.cos()], dim=-1)
+
+    def unexpected_allocation(*args, **kwargs):
+        pytest.fail("Time embedding must reuse its frequency buffer.")
+
+    monkeypatch.setattr(torch, "linspace", unexpected_allocation)
+    torch.testing.assert_close(embedding(times), expected, rtol=0, atol=0)
+    assert not embedding.state_dict()
+
+
+@pytest.mark.parametrize("sampler", ["ode", "sde"])
+@pytest.mark.parametrize("model_cls", [QuaSiD_cont, QuaSiD_disc])
+def test_sampler_avoids_per_step_scalar_extraction(monkeypatch, sampler, model_cls):
+    model = model_cls(
+        seq_length=24, channels=2, emb_size=32, num_layers=1,
+        max_step=500, sampler=sampler, device="cpu", attn_backend="sdpa",
+    )
+    monkeypatch.setattr(
+        model, "_predict_noise",
+        lambda x_r, x_i, *args, **kwargs: (torch.zeros_like(x_r), torch.zeros_like(x_i)),
+    )
+
+    def unexpected_item(*args, **kwargs):
+        pytest.fail("Sampling must transfer the time grid once instead of extracting each step.")
+
+    monkeypatch.setattr(torch.Tensor, "item", unexpected_item)
+    real, imaginary, _ = model._sample_spectrum(2, 200)
+    assert real.shape == imaginary.shape == (2, 13, 2)
 
 
 @pytest.mark.parametrize("gate", range(6))
@@ -150,7 +186,7 @@ def test_v5_pmi_requires_diffusion_scaling(missing):
         model(torch.randn(2, 7, 2), torch.randn(2, 7, 2), torch.ones(2), **args)
 
 
-@pytest.mark.parametrize("num_steps", [1, 3])
+@pytest.mark.parametrize("num_steps", [1, 3, 200])
 def test_cont_sde_omits_noise_only_on_last_step(monkeypatch, num_steps):
     model = QuaSiD_cont(
         seq_length=24, channels=2, emb_size=32, num_layers=1,

@@ -153,7 +153,7 @@ class QuaSiD_disc(QuaSiD):
         x_r, x_i, stats = self._initial_spectrum_state(batch_size)
         time_steps, next_steps = self._sampling_time_pairs(num_steps)
         for t_value, next_t_value in tqdm(
-            zip(time_steps, next_steps),
+            zip(time_steps.tolist(), next_steps.tolist()),
             total=time_steps.numel(),
             desc=desc,
             disable=not sys.stderr.isatty(),
@@ -161,8 +161,8 @@ class QuaSiD_disc(QuaSiD):
             x_r, x_i = self._ddpm_step(
                 x_r,
                 x_i,
-                int(t_value.item()),
-                int(next_t_value.item()),
+                t_value,
+                next_t_value,
                 stats,
                 condition=condition,
                 cfg_scale=cfg_scale,

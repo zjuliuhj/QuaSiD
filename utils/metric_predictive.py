@@ -101,7 +101,7 @@ def predictive_score_metrics(
     hidden_dim = max(1, input_dim // 2)
     model = GRUPredictor(input_dim=input_dim, hidden_dim=hidden_dim).to(device)
     checkpoint_path = metric_checkpoint_path(
-        checkpoint_dir, "predictor", ori_data, iterations, batch_size, dataset_name
+        checkpoint_dir, "predictor", ori_data, dataset_name
     )
     if not load_metric_checkpoint(model, checkpoint_path):
         optimizer = torch.optim.Adam(model.parameters())

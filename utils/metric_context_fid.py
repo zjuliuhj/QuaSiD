@@ -35,7 +35,7 @@ def context_fid(
         lr=0.001, output_dims=320, max_train_length=3000,
     )
     checkpoint_path = metric_checkpoint_path(
-        checkpoint_dir, "ts2vec", ori_data, iterations, 8, dataset_name
+        checkpoint_dir, "ts2vec", ori_data, dataset_name
     )
     if not load_metric_checkpoint(model.net, checkpoint_path):
         model.fit(ori_data, n_iters=iterations, verbose=False)

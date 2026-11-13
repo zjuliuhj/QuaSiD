@@ -222,17 +222,20 @@ class QuaSiD_cont(QuaSiD):
         if self.sampler == "ode":
             # The final update predicts x_0 without evaluating the score at zero noise.
             time_steps[-1] = 0.0
+        time_values = time_steps.tolist()
+        if self.sampler == "sde":
+            # Compute fp32 deltas on device once, preserving the established update values.
+            time_deltas = (time_steps[1:] - time_steps[:-1]).tolist()
         for step in tqdm(range(num_steps), desc=desc, disable=not sys.stderr.isatty()):
-            t_value = float(time_steps[step].item())
+            t_value = time_values[step]
             if self.sampler == "ode":
                 x_r, x_i = self._ode_step(
-                    x_r, x_i, t_value, float(time_steps[step + 1].item()), stats,
+                    x_r, x_i, t_value, time_values[step + 1], stats,
                     condition=condition, cfg_scale=cfg_scale,
                 )
             else:
-                dt = float((time_steps[step + 1] - time_steps[step]).item())
                 x_r, x_i = self._euler_maruyama_step(
-                    x_r, x_i, t_value, dt, stats,
+                    x_r, x_i, t_value, time_deltas[step], stats,
                     condition=condition, cfg_scale=cfg_scale,
                     add_noise=step < num_steps - 1,
                 )

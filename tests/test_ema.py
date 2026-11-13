@@ -9,6 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from utils.ema import EMA
+from engine.solver import Trainer
 
 
 def _set_parameter(model, value):
@@ -36,14 +37,24 @@ def test_ema_syncs_on_first_scheduled_update_then_averages():
     assert ema.ema_model.weight.item() == 4.0
 
 
-def test_ema_checkpoint_round_trip_preserves_initialized_state():
-    model = torch.nn.Linear(1, 1, bias=False)
-    ema = EMA(model, update_every=1)
-    ema.update()
+def test_trainer_checkpoint_preserves_only_step_and_model(tmp_path):
+    trainer = Trainer.__new__(Trainer)
+    trainer.train_model = torch.nn.Linear(1, 1, bias=False)
+    trainer.ema = EMA(trainer.train_model)
+    trainer.device = torch.device("cpu")
+    trainer.ckpt_folder = tmp_path
+    trainer.logger = None
+    trainer.is_main_process = True
+    trainer.step = 123
+    _set_parameter(trainer.train_model, 4.0)
+    trainer.save(2)
 
-    restored = EMA(torch.nn.Linear(1, 1, bias=False), update_every=1)
-    restored.load_state_dict(ema.state_dict())
-
-    assert restored.initted is True
-    assert restored.step == 1
-    assert torch.equal(restored.ema_model.weight, ema.ema_model.weight)
+    checkpoint = torch.load(tmp_path / "ckpt-2.pt", map_location="cpu", weights_only=True)
+    assert set(checkpoint) == {"step", "model"}
+    assert checkpoint["step"] == 123
+    _set_parameter(trainer.train_model, 0.0)
+    trainer.step = 0
+    trainer.load(2)
+    assert trainer.step == 123
+    torch.testing.assert_close(trainer.train_model.weight, torch.tensor([[4.0]]))
+    torch.testing.assert_close(trainer.ema.ema_model.weight, trainer.train_model.weight)

@@ -1,5 +1,3 @@
-import hashlib
-import json
 import os
 from pathlib import Path
 import re
@@ -15,27 +13,17 @@ def metric_checkpoint_path(
     checkpoint_dir: str | Path | None,
     metric: str,
     reference_data,
-    iterations: int,
-    batch_size: int,
     dataset_name: str = "reference",
 ) -> Path | None:
-    """Share evaluator weights for the same real reference data and training settings."""
+    """Return the shared evaluator path for a dataset and horizon."""
     if checkpoint_dir is None:
         return None
     if not re.fullmatch(r"[A-Za-z0-9_-]+", dataset_name):
         raise ValueError(f"Invalid metric checkpoint dataset name: {dataset_name!r}")
 
-    settings = [2, metric, iterations, batch_size, torch.__version__]
-    digest = hashlib.sha256(json.dumps(settings).encode())
-    digest.update(np.asarray([len(reference_data)], dtype=np.int64).tobytes())
-    for sequence in reference_data:
-        sequence = np.ascontiguousarray(sequence, dtype=np.float32)
-        digest.update(np.asarray(sequence.shape, dtype=np.int64).tobytes())
-        digest.update(memoryview(sequence).cast("B"))
     metric_name = {"discriminator": "ds", "predictor": "ps", "ts2vec": "ts2vec"}[metric]
     horizon = reference_data[0].shape[0]
-    filename = f"{metric_name}_steps{iterations}_bs{batch_size}_{digest.hexdigest()[:16]}.pt"
-    return Path(checkpoint_dir) / dataset_name.lower() / f"horizon_{horizon}" / filename
+    return Path(checkpoint_dir) / dataset_name / f"horizon_{horizon}" / f"{metric_name}.pt"
 
 
 def load_metric_checkpoint(model: torch.nn.Module, path: Path | None) -> bool:

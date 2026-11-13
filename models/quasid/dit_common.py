@@ -28,13 +28,15 @@ def get_sinusoidal_positional_embeddings(num_positions, d_model):
 class TimeEmbedding(nn.Module):
     def __init__(self, dim):
         super().__init__()
-        self.dim = dim
+        self.register_buffer(
+            "freqs", torch.pow(10000, torch.linspace(0, 1, dim // 2)), persistent=False
+        )
 
     def forward(self, t):
         t = t.unsqueeze(-1)
-        freqs = torch.pow(10000, torch.linspace(0, 1, self.dim // 2)).to(t.device)
-        sin_emb = torch.sin(t[:, None] / freqs)
-        cos_emb = torch.cos(t[:, None] / freqs)
+        phase = t[:, None] / self.freqs
+        sin_emb = torch.sin(phase)
+        cos_emb = torch.cos(phase)
         embedding = torch.cat([sin_emb, cos_emb], dim=-1)
         return embedding.squeeze(1)
 

@@ -47,9 +47,10 @@ def main():
                     raise RuntimeError(result.stdout[-15000:])
             checkpoint = work / f'experiments/uncond/quasid_{wrapper}/sines/smoke_v5/ckpt/ckpt-1.pt'
             state = torch.load(checkpoint, map_location='cpu', weights_only=True)
+            assert set(state) == {'step', 'model'}
             assert state['step'] == 2
             assert all(torch.isfinite(value).all() for value in state['model'].values())
-            print(f'PASS: V5 {wrapper.upper()} training, finite checkpoint, EMA reload, and sampling')
+            print(f'PASS: V5 {wrapper.upper()} training, finite checkpoint, model reload, and sampling')
     print('PASS: complete CPU smoke check; temporary artifacts removed')
 
 

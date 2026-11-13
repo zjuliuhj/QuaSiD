@@ -171,7 +171,7 @@ python main.py --name sines_quasid --mode uncond \
 
 Use an existing checkpoint milestone. Milestones increase at every
 `solver.save_cycle`; for example, 20,000 steps with a 2,000-step save cycle
-produces checkpoints 1 through 10. Evaluation loads the EMA model and computes
+produces checkpoints 1 through 10. Evaluation loads the saved model and computes
 metrics and visualizations unless `--skip_metrics` or `--skip_visualization` is set.
 It generates samples in memory; the evaluation entry points do not export a
 standalone generated-sample NPY file.
@@ -221,6 +221,8 @@ experiments/<mode>/<model_name>/<dataset>/<experiment>/ckpt/ckpt-<milestone>.pt
 
 For evaluation, `--ckpt_name` selects the checkpoint experiment and defaults to `--name`.
 
+Main-model checkpoints contain only `step` and `model`. Evaluation uses the saved model parameters. Fresh training starts with a new optimizer; optimizer state, EMA state, and training-resume metadata are excluded from checkpoint storage.
+
 ## GPU queues and repeated evaluation
 
 ```bash
@@ -252,9 +254,9 @@ For a saved unconditional run, reproduce its original training overrides and use
 across these evaluation seeds, not across independently trained models.
 Context-FID, discriminative score (DS), and predictive score (PS) share evaluator checkpoints across generation seeds and models for the same dataset and horizon. Weights are loaded from `experiments/metric_checkpoints/`; a missing evaluator is trained once and saved.
 
-Checkpoints use `experiments/metric_checkpoints/<dataset>/horizon_<length>/<metric>_steps<iterations>_bs<batch>_<fingerprint>.pt`, where `<metric>` is `ds`, `ps`, or `ts2vec`. For example, ETTh1 at horizon 256 stores its discriminator as `etth1/horizon_256/ds_steps2000_bs128_<fingerprint>.pt`. The 16-character fingerprint identifies the real reference and evaluator settings, and filenames are shared across generation seeds and models.
+Checkpoints use the fixed paths `experiments/metric_checkpoints/<dataset>/horizon_<length>/ds.pt`, `ps.pt`, and `ts2vec.pt`. Dataset names match the experiment's `dataset_name`, including case. For example, Quito at horizon 512 uses `experiments/metric_checkpoints/Quito/horizon_512/ds.pt`. Existing weights are reused across generation seeds and models.
 
-Cache keys include the fixed real metric subset, normalization, horizon, and training settings. The first generated batch supplies the training data for DS and PS; TS2Vec trains on the real reference only.
+The dataset and horizon select the evaluator checkpoint. Training settings apply when the checkpoint is missing. The first generated batch supplies the training data for DS and PS; TS2Vec trains on the real reference only.
 
 With a fixed predictor and real reference, PS reports the same real-data MAE for each generated batch. DS and Context-FID evaluate each new generated batch.
 
@@ -289,7 +291,7 @@ This repository contains the QuaSiD model, training and evaluation code, task co
 Historical validation of the blockwise-only release included:
 
 - All 41 tests covering the QuaSiD backbone, diffusion wrappers, EMA, sine loader, and conditional metric scaling.
-- CPU training, finite checkpoint checks, EMA reload, and sampling for both diffusion wrappers.
+- CPU training, finite checkpoint checks, model reload, and sampling for both diffusion wrappers.
 - Schema validation and model-target imports for all 25 YAML configurations.
 - Shell syntax checks for the experiment launchers.
 

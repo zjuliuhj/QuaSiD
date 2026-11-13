@@ -12,14 +12,11 @@ from utils.metric_predictive import predictive_score_metrics
 @pytest.mark.parametrize("metric, name", [
     ("discriminator", "ds"), ("predictor", "ps"), ("ts2vec", "ts2vec"),
 ])
-def test_checkpoint_path_contains_dataset_horizon_and_settings(metric, name, tmp_path):
+def test_checkpoint_path_uses_fixed_dataset_and_horizon_filename(metric, name, tmp_path):
     real = np.zeros((20, 8, 3), dtype=np.float32)
-    path = metric_checkpoint_path(tmp_path, metric, real, 2000, 128, dataset_name="ETTh1")
-    assert path.parent == tmp_path / "etth1" / "horizon_8"
-    assert path.name.startswith(f"{name}_steps2000_bs128_")
-    assert len(path.stem.rsplit("_", 1)[1]) == 16
-    assert path.suffix == ".pt"
-    other = metric_checkpoint_path(tmp_path, metric, real, 2000, 128, dataset_name="stocks")
+    path = metric_checkpoint_path(tmp_path, metric, real, dataset_name="ETTh1")
+    assert path == tmp_path / "ETTh1" / "horizon_8" / f"{name}.pt"
+    other = metric_checkpoint_path(tmp_path, metric, real, dataset_name="stocks")
     assert other.parent == tmp_path / "stocks" / "horizon_8"
     assert other != path
 
@@ -27,7 +24,7 @@ def test_checkpoint_path_contains_dataset_horizon_and_settings(metric, name, tmp
 def test_checkpoint_path_rejects_dataset_path_traversal(tmp_path):
     real = np.zeros((20, 8, 3), dtype=np.float32)
     with pytest.raises(ValueError, match="Invalid metric checkpoint dataset name"):
-        metric_checkpoint_path(tmp_path, "discriminator", real, 2000, 128, dataset_name="../other")
+        metric_checkpoint_path(tmp_path, "discriminator", real, dataset_name="../other")
 
 
 @pytest.mark.parametrize("metric", [discriminative_score_metrics, predictive_score_metrics])
@@ -54,8 +51,8 @@ def test_checkpoint_is_shared_across_seeds_and_generated_batches(metric, tmp_pat
 
 
 @pytest.mark.parametrize("metric", [discriminative_score_metrics, predictive_score_metrics])
-@pytest.mark.parametrize("changed", ["reference", "horizon", "iterations", "batch_size"])
-def test_checkpoint_retrains_for_changed_reference_or_settings(metric, changed, tmp_path, monkeypatch):
+@pytest.mark.parametrize("changed", ["reference", "iterations", "batch_size"])
+def test_checkpoint_reuses_weights_for_the_same_dataset_and_horizon(metric, changed, tmp_path, monkeypatch):
     rng = np.random.default_rng(11)
     real = rng.random((20, 8, 3), dtype=np.float32)
     fake = rng.random((20, 8, 3), dtype=np.float32)
@@ -63,10 +60,26 @@ def test_checkpoint_retrains_for_changed_reference_or_settings(metric, changed, 
 
     if changed == "reference":
         real[0, 0, 0] += 0.1
-    if changed == "horizon":
-        real, fake = real[:, :6], fake[:, :6]
     iterations = 3 if changed == "iterations" else 2
     batch_size = 5 if changed == "batch_size" else 4
+
+    def unexpected_step(*args, **kwargs):
+        pytest.fail("Existing dataset/horizon weights must be reused.")
+
+    monkeypatch.setattr(torch.optim.Adam, "step", unexpected_step)
+    metric(
+        real, fake, iterations=iterations, batch_size=batch_size,
+        device="cpu", checkpoint_dir=tmp_path,
+    )
+    assert len(list(tmp_path.rglob("*.pt"))) == 1
+
+
+@pytest.mark.parametrize("metric", [discriminative_score_metrics, predictive_score_metrics])
+def test_checkpoint_trains_for_a_new_horizon(metric, tmp_path, monkeypatch):
+    rng = np.random.default_rng(11)
+    real = rng.random((20, 8, 3), dtype=np.float32)
+    fake = rng.random((20, 8, 3), dtype=np.float32)
+    metric(real, fake, iterations=2, batch_size=4, device="cpu", checkpoint_dir=tmp_path)
     steps = []
     original_step = torch.optim.Adam.step
 
@@ -76,10 +89,10 @@ def test_checkpoint_retrains_for_changed_reference_or_settings(metric, changed, 
 
     monkeypatch.setattr(torch.optim.Adam, "step", count_step)
     metric(
-        real, fake, iterations=iterations, batch_size=batch_size,
+        real[:, :6], fake[:, :6], iterations=2, batch_size=4,
         device="cpu", checkpoint_dir=tmp_path,
     )
-    assert len(steps) == iterations
+    assert len(steps) == 2
     assert len(list(tmp_path.rglob("*.pt"))) == 2
 
 

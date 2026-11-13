@@ -75,8 +75,6 @@ class Trainer(object):
             "global_batch_size", config["dataloader"]["batch_size"]
         ))
         self.samples_per_optimizer_step = self.global_batch_size * self.grad_accum_every
-        # Persist this value in checkpoints so elapsed-time curves continue
-        # monotonically after a resumed training run.
         self.elapsed_train_seconds = 0.0
 
         start_lr = config['solver'].get('base_lr', 1.0e-4)
@@ -154,7 +152,7 @@ class Trainer(object):
         return data.to(self.device, non_blocking=True)
 
     def save(self, milestone, verbose=False):
-        """Save model, EMA, optimizer state, and current training step on the main process."""
+        """Save only the current training step and model parameters."""
         if not self.is_main_process:
             return
         ckpt_path = self.ckpt_folder / f'ckpt-{milestone}.pt'
@@ -163,24 +161,19 @@ class Trainer(object):
         data = {
             'step': self.step,
             'model': self.train_model.state_dict(),
-            'ema': self.ema.state_dict(),
-            'opt': self.opt.state_dict(),
-            'elapsed_train_seconds': self.elapsed_train_seconds,
         }
         torch.save(data, str(ckpt_path))
 
     def load(self, milestone, verbose=False):
-        """Load a checkpoint milestone into the train model, optimizer, EMA, and step counters."""
+        """Load model parameters and their training step for evaluation."""
         ckpt_path = self.ckpt_folder / f'ckpt-{milestone}.pt'
         if self.logger is not None and verbose:
-            self.logger.log_info('Resume from {}'.format(str(ckpt_path)))
-        data = torch.load(str(ckpt_path), map_location=self.device)
+            self.logger.log_info('Load model from {}'.format(str(ckpt_path)))
+        data = torch.load(str(ckpt_path), map_location=self.device, weights_only=True)
         self.train_model.load_state_dict(data['model'])
         self.step = data['step']
-        self.opt.load_state_dict(data['opt'])
-        self.ema.load_state_dict(data['ema'])
+        self.ema.copy_params_from_model()
         self.milestone = milestone
-        self.elapsed_train_seconds = float(data.get('elapsed_train_seconds', 0.0))
 
     def train(self):
         """Run the main optimization loop with gradient accumulation, AMP, EMA, logging, and checkpoints."""
