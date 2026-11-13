@@ -5,7 +5,7 @@ model:
     channels: 5
     max_step: 1000
     sampling_steps: 500
-    sampler: sde
+    sampler: ode
     cfg_scale: 0.0
     beta_min: 0.1
     beta_max: 20.0

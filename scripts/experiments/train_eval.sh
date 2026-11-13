@@ -17,6 +17,7 @@ TENSORBOARD=${TENSORBOARD:-true}
 EVAL_SEEDS=${EVAL_SEEDS:-12345}
 SUMMARIZE_EVALS=${SUMMARIZE_EVALS:-true}
 PYTHON_BIN=${PYTHON_BIN:-python}
+export QUASID_TENSORBOARD_ROOT=${QUASID_TENSORBOARD_ROOT:-/tmp/quasid-tensorboard}
 
 case "${MODE}" in
   uncond|cond|forecast) ;;
@@ -263,8 +264,8 @@ COMMON_ARGS=(
   --config_file "${config_file}"
   --model_name "${MODEL_NAME}"
   --dataset_name "${DATASET}"
-  "${GPU_ARGS[@]}"
-  "${TENSORBOARD_ARGS[@]}"
+  ${GPU_ARGS[@]+"${GPU_ARGS[@]}"}
+  ${TENSORBOARD_ARGS[@]+"${TENSORBOARD_ARGS[@]}"}
 )
 
 AUTO_OPTS=(
@@ -305,9 +306,9 @@ if [[ "${RUN_TRAIN}" == "true" ]]; then
     --train \
     --name "${EXP_NAME}" \
     "${COMMON_ARGS[@]}" \
-    "${CLI_EXTRA_ARGS[@]}" \
+    ${CLI_EXTRA_ARGS[@]+"${CLI_EXTRA_ARGS[@]}"} \
     "${AUTO_OPTS[@]}" \
-    "${EXTRA_OPTS[@]}"
+    ${EXTRA_OPTS[@]+"${EXTRA_OPTS[@]}"}
 fi
 
 evaluate_checkpoint() {
@@ -321,9 +322,9 @@ evaluate_checkpoint() {
     --seed "${eval_seed}" \
     --eval_tag "milestone-${milestone}-seed-${eval_seed}" \
     "${COMMON_ARGS[@]}" \
-    "${CLI_EXTRA_ARGS[@]}" \
+    ${CLI_EXTRA_ARGS[@]+"${CLI_EXTRA_ARGS[@]}"} \
     "${AUTO_OPTS[@]}" \
-    "${EXTRA_OPTS[@]}"
+    ${EXTRA_OPTS[@]+"${EXTRA_OPTS[@]}"}
 }
 
 evaluate_checkpoint_seeds() {

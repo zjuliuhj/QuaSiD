@@ -109,7 +109,7 @@ def main() -> None:
     args = parse_args()
     summary = summarize_metrics(args.metrics_path, args.experiment, args.milestone, args.seeds)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    summary.to_csv(args.output, index=False, float_format="%.8f")
+    summary.to_csv(args.output, index=False, float_format="%.4f")
     print(f"Saved summary for {len(args.seeds)} seeds to {args.output}")
     print(summary.to_string(index=False))
 

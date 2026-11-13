@@ -14,7 +14,7 @@ def append_metrics_csv(csv_path, row):
         output = pd.concat([existing, new_row], ignore_index=True, sort=False)
     else:
         output = new_row
-    output.to_csv(csv_path, index=False, float_format="%.5f")
+    output.to_csv(csv_path, index=False, float_format="%.4f")
     return str(csv_path)
 
 
@@ -50,5 +50,5 @@ def update_total_metrics_csv(csv_path, row, key_columns=("experiment", "mileston
     ]
     if sort_columns:
         output = output.sort_values(sort_columns).reset_index(drop=True)
-    output.to_csv(csv_path, index=False, float_format="%.5f")
+    output.to_csv(csv_path, index=False, float_format="%.4f")
     return str(csv_path)

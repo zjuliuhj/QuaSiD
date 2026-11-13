@@ -89,15 +89,16 @@ def test_v5_pmi_receives_condition_context():
 
 
 @pytest.mark.parametrize("model_cls", [QuaSiD_cont, QuaSiD_disc])
+@pytest.mark.parametrize("sampler", ["ode", "sde"])
 @pytest.mark.parametrize("case", ["even", "odd", "cropped", "embedding", "forecast", "forecast_ci"])
-def test_v5_wrappers_train_and_sample_across_task_contracts(model_cls, case):
+def test_v5_wrappers_train_and_sample_across_task_contracts(model_cls, sampler, case):
     torch.manual_seed(9)
     conditional = case in {"embedding", "forecast", "forecast_ci"}
     forecast = case.startswith("forecast")
     length = 25 if case == "odd" else 24
     model = model_cls(
         seq_length=length, channels=2, max_step=8, sampling_steps=2,
-        sampler="ode",
+        sampler=sampler,
         backbone="dit_solver_v5", use_pmi_corr=True, corr_rank=3,
         emb_size=32, num_layers=2, device="cpu", attn_backend="sdpa",
         freq_keep_ratio=0.5 if case == "cropped" else 1.0,

@@ -8,8 +8,8 @@ PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd)
 cd "${PROJECT_ROOT}"
 
 DATASETS=${DATASETS:-"be de electricity etth1 etth2 ettm1 ettm2 exchange fr stocks weather"}
-HISTORY_LENGTHS=${HISTORY_LENGTHS:-"96"}
-PRED_LENGTHS=${PRED_LENGTHS:-"96 192 336 720"}
+HISTORY_LENGTHS=${HISTORY_LENGTHS:-}
+PRED_LENGTHS=${PRED_LENGTHS:-}
 CONDITION_DOMAIN=${CONDITION_DOMAIN:-frequency}
 MODEL_NAME=${MODEL_NAME:-quasid_cont}
 BACKBONE=${BACKBONE:-dit_solver_v5}
@@ -34,9 +34,25 @@ for dataset in ${DATASETS}; do
     echo "SKIP dataset=${dataset}: missing ${config_file}" >&2
     continue
   fi
-  for history in ${HISTORY_LENGTHS}; do
-    for horizon in ${PRED_LENGTHS}; do
-      echo "MODE=forecast DATASET=${dataset} HISTORY=${history} HORIZON=${horizon} CONDITION_DOMAIN=${CONDITION_DOMAIN} MODEL_NAME=${MODEL_NAME} BACKBONE=${BACKBONE} USE_PMI_CORR=${USE_PMI_CORR} RUN_TRAIN=${RUN_TRAIN} RUN_EVAL=${RUN_EVAL} TENSORBOARD=${TENSORBOARD} MILESTONE=${MILESTONE} PYTHON_BIN=${PYTHON_BIN}" >> "${TASK_FILE}"
+  history_lengths=${HISTORY_LENGTHS:-$(awk '$1 == "history_length:" {print $2; exit}' "${config_file}")}
+  if [[ "${dataset}" == "ili" ]]; then
+    pred_lengths=${PRED_LENGTHS:-"24 36 48 60"}
+  else
+    pred_lengths=${PRED_LENGTHS:-"96 192 336 720"}
+  fi
+
+  for model_name in ${MODEL_NAME}; do
+    case "${model_name}" in
+      quasid_cont|quasid_disc) ;;
+      *)
+        echo "MODEL_NAME entries must be quasid_cont or quasid_disc. Got ${model_name}" >&2
+        exit 1
+        ;;
+    esac
+    for history in ${history_lengths}; do
+      for horizon in ${pred_lengths}; do
+        echo "MODE=forecast DATASET=${dataset} HISTORY=${history} HORIZON=${horizon} CONDITION_DOMAIN=${CONDITION_DOMAIN} MODEL_NAME=${model_name} BACKBONE=${BACKBONE} USE_PMI_CORR=${USE_PMI_CORR} RUN_TRAIN=${RUN_TRAIN} RUN_EVAL=${RUN_EVAL} TENSORBOARD=${TENSORBOARD} MILESTONE=${MILESTONE} PYTHON_BIN=${PYTHON_BIN}" >> "${TASK_FILE}"
+      done
     done
   done
 done

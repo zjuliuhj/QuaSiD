@@ -15,6 +15,7 @@ config/forecasting/ettm1.yaml
 config/forecasting/ettm2.yaml
 config/forecasting/exchange.yaml
 config/forecasting/fr.yaml
+config/forecasting/ili.yaml
 config/forecasting/stocks.yaml
 config/forecasting/weather.yaml
 config/unconditional/Quito.yaml
