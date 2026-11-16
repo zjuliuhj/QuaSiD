@@ -63,7 +63,7 @@ config_path() {
   esac
 }
 
-config_file=$(config_path)
+config_file=${CONFIG_FILE:-$(config_path)}
 
 if [[ ! -f "${config_file}" ]]; then
   echo "Config not found for MODE=${MODE}, DATASET=${DATASET}: ${config_file}" >&2
@@ -303,6 +303,59 @@ case "${MODE}" in
     ;;
 esac
 
+if [[ "${MODE}" == "forecast" ]]; then
+  experiment_dir="experiments/${MODE}/${MODEL_NAME}/${DATASET}/${EXP_NAME}"
+  mkdir -p "${experiment_dir}"
+  exec {forecast_lock_fd}> "${experiment_dir}/.run.lock"
+  if ! flock -n "${forecast_lock_fd}"; then
+    echo "Forecast group is already running: ${experiment_dir}" >&2
+    exit 1
+  fi
+
+  if [[ "${RUN_TRAIN}" == "true" ]]; then
+    if compgen -G "${experiment_dir}/ckpt/ckpt-*.pt" > /dev/null; then
+      # A validation-best checkpoint may be written long before training finishes.
+      # Check completion against the same effective training config used below.
+      if [[ -f "${experiment_dir}/ckpt/ckpt-${MILESTONE}.pt" &&
+            -f "${experiment_dir}/ckpt/training-complete.json" ]] && \
+        "${PYTHON_CMD[@]}" -c '
+import json
+from pathlib import Path
+import sys
+from utils.runtime import load_yaml_config, merge_opts_to_config
+config = merge_opts_to_config(load_yaml_config(sys.argv[1]), sys.argv[3:])
+try:
+    completed = json.loads(Path(sys.argv[2]).read_text())
+    solver = config["solver"]
+    sufficient_steps = int(completed["step"]) >= int(solver["train_steps"])
+    validation = solver.get("validation", {})
+    early_stopping = validation.get("early_stopping", {})
+    early_stop_complete = (
+        completed.get("reason") == "early_stopping"
+        and bool(validation.get("enabled", True))
+        and bool(early_stopping.get("enabled", False))
+        and int(completed["train_steps"]) == int(solver["train_steps"])
+        and int(completed["patience"]) == int(early_stopping.get("patience", 2))
+        and int(completed["validation_interval"]) == int(validation.get("interval", solver["save_cycle"]))
+        and completed.get("validation_max_batches") == validation.get("max_batches")
+    )
+except (OSError, ValueError, TypeError, KeyError):
+    sufficient_steps = False
+    early_stop_complete = False
+sys.exit(0 if sufficient_steps or early_stop_complete else 1)
+' "${config_file}" "${experiment_dir}/ckpt/training-complete.json" \
+          "${AUTO_OPTS[@]}" ${EXTRA_OPTS[@]+"${EXTRA_OPTS[@]}"}; then
+        echo ">>> Reuse trained forecast model: ${experiment_dir}/ckpt/ckpt-${MILESTONE}.pt"
+        RUN_TRAIN=false
+      else
+        echo "Incomplete forecast training, missing completion record, or missing requested checkpoint: ${experiment_dir}. Training was not restarted." >&2
+        echo "Use a new EXP_NAME for fresh training, or RUN_TRAIN=false to evaluate existing checkpoints." >&2
+        exit 1
+      fi
+    fi
+  fi
+fi
+
 if [[ "${RUN_TRAIN}" == "true" ]]; then
   echo ">>> Train model=${MODEL_NAME} experiment=${EXP_NAME}"
   "${PYTHON_CMD[@]}" main.py \
@@ -317,6 +370,22 @@ fi
 evaluate_checkpoint() {
   local milestone=$1
   local eval_seed=$2
+  local metrics_path="experiments/${MODE}/${MODEL_NAME}/${DATASET}/${EXP_NAME}/metrics.csv"
+  if [[ "${MODE}" == "forecast" && -f "${metrics_path}" ]]; then
+    if "${PYTHON_CMD[@]}" -c '
+import csv
+import sys
+with open(sys.argv[1], newline="") as handle:
+    done = any(
+        row.get("milestone") == sys.argv[2] and row.get("seed") == sys.argv[3]
+        for row in csv.DictReader(handle)
+    )
+sys.exit(0 if done else 1)
+' "${metrics_path}" "${milestone}" "${eval_seed}"; then
+      echo ">>> Reuse forecast evaluation: ${EXP_NAME} milestone=${milestone} seed=${eval_seed}"
+      return
+    fi
+  fi
   echo ">>> Eval model=${MODEL_NAME} experiment=${EXP_NAME} checkpoint=${EXP_NAME} milestone=${milestone} seed=${eval_seed}"
   "${PYTHON_CMD[@]}" main.py \
     --name "${EXP_NAME}" \

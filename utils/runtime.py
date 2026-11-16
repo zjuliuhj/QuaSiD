@@ -155,6 +155,9 @@ def validate_config(config, mode):
         raise ValueError("solver.validation.interval must be positive.")
     if validation.get("max_batches") is not None and int(validation["max_batches"]) <= 0:
         raise ValueError("solver.validation.max_batches must be positive or null.")
+    early_stopping = validation.get("early_stopping", {})
+    if int(early_stopping.get("patience", 2)) <= 0:
+        raise ValueError("solver.validation.early_stopping.patience must be positive.")
     split_lengths = dataset_params.get("split_lengths")
     if split_lengths is not None:
         if len(split_lengths) != 3 or any(type(value) is not int or value <= 0 for value in split_lengths):

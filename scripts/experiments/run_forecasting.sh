@@ -7,7 +7,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd)
 cd "${PROJECT_ROOT}"
 
-DATASETS=${DATASETS:-"ettm1 ettm2 weather be de etth1 etth2 exchange national_illness"}
+DATASETS=${DATASETS:-"etth1 etth2 ettm1 ettm2 weather be de exchange national_illness"}
 HISTORY_LENGTHS=${HISTORY_LENGTHS:-168}
 PRED_LENGTHS=${PRED_LENGTHS:-192}
 NATIONAL_ILLNESS_PRED_LENGTHS=${NATIONAL_ILLNESS_PRED_LENGTHS:-36}
@@ -19,7 +19,7 @@ RUN_TRAIN=${RUN_TRAIN:-true}
 RUN_EVAL=${RUN_EVAL:-true}
 TENSORBOARD=${TENSORBOARD:-true}
 MILESTONE=${MILESTONE:-best}
-EVAL_SEEDS=${EVAL_SEEDS:-"2022,2023,2024,2025,2026"}
+EVAL_SEEDS=${EVAL_SEEDS:-"2026"}
 PYTHON_BIN=${PYTHON_BIN:-python}
 GPU_IDS=${GPU_IDS:-"0"}
 LOG_ROOT=${LOG_ROOT:-logs/forecasting_queue}

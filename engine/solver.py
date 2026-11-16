@@ -78,6 +78,13 @@ class Trainer(object):
         self.best_validation_loss = float('inf')
         self.best_validation_step = 0
         self.last_validation_step = None
+        early_stopping = validation.get('early_stopping', {})
+        self.early_stopping_enabled = self.validation_enabled and bool(early_stopping.get('enabled', False))
+        self.early_stopping_patience = int(early_stopping.get('patience', 2))
+        if self.early_stopping_patience <= 0:
+            raise ValueError("Early-stopping patience must be positive.")
+        self.validation_no_improvement = 0
+        self.early_stopped = False
         self.step = 0
         self.milestone = 0
         self.logger = logger
@@ -239,8 +246,33 @@ class Trainer(object):
                 self.logger.log_info(f"Best validation loss: {loss:.6f} at step {self.step}")
         return loss
 
+    def _validate_and_check_early_stopping(self):
+        """Count consecutive validations without a strict improvement over the best loss."""
+        previous_best = self.best_validation_loss
+        loss = self.maybe_save_best()
+        if not self.early_stopping_enabled or loss is None:
+            return False
+        if math.isfinite(loss) and loss < previous_best:
+            self.validation_no_improvement = 0
+        else:
+            self.validation_no_improvement += 1
+        if self.validation_no_improvement < self.early_stopping_patience:
+            return False
+        self.early_stopped = True
+        if self.logger is not None:
+            self.logger.log_info(
+                f"Early stopping at step {self.step}: {self.validation_no_improvement} "
+                f"consecutive validations without improvement; best loss "
+                f"{self.best_validation_loss:.6f} at step {self.best_validation_step}."
+            )
+        return True
+
     def train(self):
         """Run the main optimization loop with gradient accumulation, AMP, EMA, logging, and checkpoints."""
+        completion_path = self.ckpt_folder / "training-complete.json"
+        record_completion = getattr(self.args, "mode", None) == "forecast"
+        if record_completion and self.is_main_process:
+            completion_path.unlink(missing_ok=True)
         data_iter = iter(self.dl)
         self.model.train()
 
@@ -324,19 +356,34 @@ class Trainer(object):
                     self.milestone += 1
                     self.save(self.milestone)
 
+                should_stop = False
                 if self.validation_enabled and self.step % self.validation_interval == 0:
-                    self.maybe_save_best()
+                    should_stop = self._validate_and_check_early_stopping()
 
                 pbar.update(1)
+                if should_stop:
+                    break
 
         if self.validation_enabled and self.last_validation_step != self.step:
-            self.maybe_save_best()
+            self._validate_and_check_early_stopping()
 
         if self.is_main_process:
             print('training complete')
         if self.logger is not None:
             self.logger.log_info(f'Training Done. Total Steps: {self.step}')
         self._barrier()
+        if record_completion and self.is_main_process:
+            completion = {"step": self.step}
+            if self.early_stopped:
+                completion.update({
+                    "reason": "early_stopping", "train_steps": self.train_num_steps,
+                    "patience": self.early_stopping_patience,
+                    "validation_interval": self.validation_interval,
+                    "validation_max_batches": self.validation_max_batches,
+                })
+            temporary_path = completion_path.with_suffix(".tmp")
+            temporary_path.write_text(json.dumps(completion) + "\n")
+            temporary_path.replace(completion_path)
 
     def sample(self, num, size_every):
         """Generate unconditional samples in chunks with the EMA model."""

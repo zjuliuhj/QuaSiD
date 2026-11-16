@@ -162,16 +162,36 @@ inside the selected split. See [ForecastingDataset](data/dataset_utils/forecasti
 Forecast training builds a validation loader with ordered, complete batches.
 `solver.validation.enabled`, `interval`, and `max_batches` control validation;
 `max_batches: null` evaluates the full validation set. The bundled configs train
-for 18,000 optimizer steps, save and validate every 1,800 steps, and use training
+for 20,000 optimizer steps, save and validate every 2,000 steps, and use training
 batch size 32 and validation/test batch size 64. A final validation runs if the
 last step was not already validated.
 
 Validation evaluates the **current model weights**, with sample-weighted mean
-model loss. It does not generate forecast ensembles or select by CRPS/MAE.
+model loss. Classifier-free condition dropout applies only during training;
+validation retains the supplied history condition. It does not generate
+forecast ensembles or select by CRPS/MAE.
 A strictly lower finite validation loss replaces `ckpt-best.pt`;
 `ckpt-best.json` records the loss and selected step. The PT format remains
 exactly `step` and `model`, and evaluation loads those selected model weights.
-There is no early stopping; the learning-rate scheduler still uses training loss.
+Forecast configs enable `solver.validation.early_stopping` with `enabled: true`
+and `patience: 2`. After establishing a best loss, two consecutive validations
+without a strictly lower loss stop training; ties and non-finite losses count as
+non-improvements. A new best resets the counter. For example, with validation
+every 2,000 steps, a best at step 2,000 followed by no improvement at steps 4,000
+and 6,000 stops at step 6,000. Evaluation still loads the best checkpoint.
+Set `enabled: false` to run the full step budget. Early stopping is inactive
+without a validation loader. The learning-rate scheduler still receives training loss.
+
+Forecast training writes `ckpt/training-complete.json` only after reaching the
+step budget and final validation, or after validation-based early stopping. Early
+stop records include the requested budget, patience, and validation settings.
+The launcher reuses an existing checkpoint when this record reaches the effective
+`train_steps`, or records early stopping under the same budget and stopping
+settings, including CLI overrides. An early `ckpt-best.pt` alone never marks a run complete.
+Incomplete runs and older runs without a completion record keep their checkpoints
+and stop with a message. Use a new `EXP_NAME` for fresh training or
+`RUN_TRAIN=false` to evaluate existing checkpoints; optimizer-state resume is
+not supported by the current checkpoint format.
 
 Forecast launchers default to `MILESTONE=best`. The queue defaults to history 168
 and horizon 192; `national_illness` (and its `ili` alias) uses horizon 36, with

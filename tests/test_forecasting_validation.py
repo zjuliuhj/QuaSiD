@@ -198,7 +198,10 @@ def test_all_forecast_configs_and_validation_options():
         validate_config(config, "forecast")
         runtime = materialize_runtime_config(config, "forecast")
         assert "condition_dim" in runtime["model"]["params"]
-        assert config["solver"]["validation"] == dict(enabled=True, interval=1800, max_batches=None)
+        assert config["solver"]["validation"] == dict(
+            enabled=True, interval=2000, max_batches=None,
+            early_stopping=dict(enabled=True, patience=2),
+        )
     for key, value in [("interval", 0), ("max_batches", -1)]:
         invalid = copy.deepcopy(config)
         invalid["solver"]["validation"][key] = value

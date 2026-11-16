@@ -352,6 +352,8 @@ class QuaSiD(nn.Module, InstNormMixin):
 
     def _training_condition(self, cond_emb):
         """Apply classifier-free condition dropout during training."""
+        if not self.training:
+            return cond_emb
         return cond_emb if cond_emb is not None and torch.rand(1).item() >= 0.1 else None
 
     @torch.no_grad()
