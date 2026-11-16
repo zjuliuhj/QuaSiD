@@ -68,12 +68,12 @@ def _batch_to_tensors(data, time, indices, device):
     max_len = max(length for _, length in batch)
     dim = batch[0][0].shape[-1]
 
-    x = torch.zeros(batch_size, max_len, dim, device=device)
-    lengths = torch.zeros(batch_size, dtype=torch.long, device=device)
+    x = np.zeros((batch_size, max_len, dim), dtype=np.float32)
+    lengths = np.empty(batch_size, dtype=np.int64)
     for row, (seq, length) in enumerate(batch):
-        x[row, :length] = torch.as_tensor(seq[:length], device=device)
+        x[row, :length] = seq[:length]
         lengths[row] = length
-    return x, lengths
+    return torch.from_numpy(x).to(device), torch.from_numpy(lengths).to(device)
 
 
 def _sample_batch(data, time, batch_size, device):

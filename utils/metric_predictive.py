@@ -55,16 +55,16 @@ def _batch_to_tensors(prepared, indices, device):
     max_len = max(length for _, _, length in batch)
     input_dim = batch[0][0].shape[-1]
 
-    x = torch.zeros(batch_size, max_len, input_dim, device=device)
-    y = torch.zeros(batch_size, max_len, 1, device=device)
-    mask = torch.zeros(batch_size, max_len, dtype=torch.bool, device=device)
+    x = np.zeros((batch_size, max_len, input_dim), dtype=np.float32)
+    y = np.zeros((batch_size, max_len, 1), dtype=np.float32)
+    mask = np.zeros((batch_size, max_len), dtype=bool)
 
     for row, (seq_x, seq_y, length) in enumerate(batch):
-        x[row, :length] = torch.as_tensor(seq_x, device=device)
-        y[row, :length] = torch.as_tensor(seq_y, device=device)
+        x[row, :length] = seq_x
+        y[row, :length] = seq_y
         mask[row, :length] = True
 
-    return x, y, mask
+    return tuple(torch.from_numpy(array).to(device) for array in (x, y, mask))
 
 
 def predictive_score_metrics(
