@@ -8,7 +8,10 @@ cd "${PROJECT_ROOT}"
 MODE=${MODE:-uncond}
 DATASET=${DATASET:-}
 MODEL_NAME=${MODEL_NAME:-}
-MILESTONE=${MILESTONE:-5}
+MILESTONE=${MILESTONE:-}
+if [[ -z "${MILESTONE}" ]]; then
+  if [[ "${MODE}" == "forecast" ]]; then MILESTONE=best; else MILESTONE=5; fi
+fi
 EVAL_ALL_CHECKPOINTS=${EVAL_ALL_CHECKPOINTS:-false}
 GPU=${GPU:-0}
 RUN_TRAIN=${RUN_TRAIN:-true}

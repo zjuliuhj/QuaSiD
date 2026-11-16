@@ -7,9 +7,10 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd)
 cd "${PROJECT_ROOT}"
 
-DATASETS=${DATASETS:-"be de electricity etth1 etth2 ettm1 ettm2 exchange fr stocks weather"}
-HISTORY_LENGTHS=${HISTORY_LENGTHS:-}
-PRED_LENGTHS=${PRED_LENGTHS:-}
+DATASETS=${DATASETS:-"ettm1 ettm2 weather be de etth1 etth2 exchange national_illness"}
+HISTORY_LENGTHS=${HISTORY_LENGTHS:-168}
+PRED_LENGTHS=${PRED_LENGTHS:-192}
+NATIONAL_ILLNESS_PRED_LENGTHS=${NATIONAL_ILLNESS_PRED_LENGTHS:-36}
 CONDITION_DOMAIN=${CONDITION_DOMAIN:-frequency}
 MODEL_NAME=${MODEL_NAME:-quasid_cont}
 BACKBONE=${BACKBONE:-dit_solver_v5}
@@ -17,14 +18,14 @@ USE_PMI_CORR=${USE_PMI_CORR:-true}
 RUN_TRAIN=${RUN_TRAIN:-true}
 RUN_EVAL=${RUN_EVAL:-true}
 TENSORBOARD=${TENSORBOARD:-true}
-MILESTONE=${MILESTONE:-5}
+MILESTONE=${MILESTONE:-best}
 EVAL_SEEDS=${EVAL_SEEDS:-"2022,2023,2024,2025,2026"}
 PYTHON_BIN=${PYTHON_BIN:-python}
 GPU_IDS=${GPU_IDS:-"0"}
 LOG_ROOT=${LOG_ROOT:-logs/forecasting_queue}
 FORECAST_SAMPLES=${FORECAST_SAMPLES:-20}
 ENSEMBLE_CHUNK_SIZE=${ENSEMBLE_CHUNK_SIZE:-4}
-FORECAST_EVAL_SAMPLE_LIMIT=${FORECAST_EVAL_SAMPLE_LIMIT:-2000}
+FORECAST_EVAL_SAMPLE_LIMIT=${FORECAST_EVAL_SAMPLE_LIMIT:-20000}
 
 TASK_FILE=$(mktemp "${TMPDIR:-/tmp}/quasid_forecasting_tasks.XXXXXX")
 trap 'rm -f "${TASK_FILE}"' EXIT
@@ -36,10 +37,10 @@ for dataset in ${DATASETS}; do
     continue
   fi
   history_lengths=${HISTORY_LENGTHS:-$(awk '$1 == "history_length:" {print $2; exit}' "${config_file}")}
-  if [[ "${dataset}" == "ili" ]]; then
-    pred_lengths=${PRED_LENGTHS:-"24 36 48 60"}
+  if [[ "${dataset}" == "ili" || "${dataset}" == "national_illness" ]]; then
+    pred_lengths=${NATIONAL_ILLNESS_PRED_LENGTHS}
   else
-    pred_lengths=${PRED_LENGTHS:-"96 192 336 720"}
+    pred_lengths=${PRED_LENGTHS}
   fi
 
   for model_name in ${MODEL_NAME}; do

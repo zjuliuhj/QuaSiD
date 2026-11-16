@@ -23,8 +23,12 @@ solver:
   train_steps: 18000
   mixed_precision: bf16
   grad_accum_every: 2
-  ckpt_count: 5
-  save_cycle: 3600
+  ckpt_count: 10
+  save_cycle: 1800
+  validation:
+    enabled: true
+    interval: 1800
+    max_batches: null
   ema:
     decay: 0.995
     update_interval: 10
@@ -32,7 +36,7 @@ solver:
     target: engine.lr_sch.ReduceLROnPlateauWithWarmup
     params:
       factor: 0.5
-      patience: 4000
+      patience: 3600
       min_lr: 1.0e-05
       threshold: 0.1
       threshold_mode: rel
@@ -49,13 +53,12 @@ dataloader:
       pred_length: 128
       channels: 7
       stride: 1
-      train_ratio: 0.7
-      val_ratio: 0.1
+      split_lengths: [34560, 11520, 11520]
       normalization: zscore
       condition_format: sequence
   test_sample_limit: null
-  batch_size: 128
-  sample_size: 256
+  batch_size: 32
+  sample_size: 64
   num_workers: 4
   pin_memory: true
   persistent_workers: true

@@ -1,6 +1,8 @@
 import os
 import sys
 import copy
+import json
+import math
 import time
 import torch
 import torch.distributed as dist
@@ -30,7 +32,7 @@ def cycle(dl, sampler=None):
 
 
 class Trainer(object):
-    def __init__(self, config, args, model, dataloader, logger=None):
+    def __init__(self, config, args, model, dataloader, logger=None, val_dataloader=None):
         """Prepare device placement, DDP wrapping, optimizer, EMA, scheduler, and runtime bookkeeping."""
         super().__init__()
         self.args, self.config = args, config
@@ -66,6 +68,16 @@ class Trainer(object):
             max(1, self.train_num_steps // self.ckpt_count),
         ))
         self.dl = cycle(dataloader['dataloader'], sampler=dataloader.get('sampler'))
+        self.val_dataloader = val_dataloader
+        validation = config['solver'].get('validation', {})
+        self.validation_enabled = bool(validation.get('enabled', val_dataloader is not None)) and val_dataloader is not None
+        self.validation_interval = int(validation.get('interval', self.save_cycle))
+        self.validation_max_batches = validation.get('max_batches')
+        if self.validation_interval <= 0 or (self.validation_max_batches is not None and int(self.validation_max_batches) <= 0):
+            raise ValueError("Validation interval and max_batches must be positive.")
+        self.best_validation_loss = float('inf')
+        self.best_validation_step = 0
+        self.last_validation_step = None
         self.step = 0
         self.milestone = 0
         self.logger = logger
@@ -175,6 +187,58 @@ class Trainer(object):
         self.ema.copy_params_from_model()
         self.milestone = milestone
 
+    def validate(self):
+        """Validate current model weights; rank zero evaluates the full ordered loader."""
+        if not self.validation_enabled:
+            return None
+        validation_loss = float('nan')
+        if self.is_main_process:
+            was_training = self.train_model.training
+            self.train_model.eval()
+            total_loss, total_count = 0.0, 0
+            try:
+                with torch.inference_mode(), torch.autocast(
+                    device_type=self.device.type, dtype=self.amp_dtype, enabled=self.use_amp,
+                ):
+                    for index, data in enumerate(self.val_dataloader['dataloader']):
+                        if self.validation_max_batches is not None and index >= int(self.validation_max_batches):
+                            break
+                        data = self._move_batch_to_device(data)
+                        batch_size = int((data[0] if isinstance(data, (list, tuple)) else data).shape[0])
+                        loss = self.train_model(data)
+                        total_loss += float(loss.item()) * batch_size
+                        total_count += batch_size
+                if total_count:
+                    validation_loss = total_loss / total_count
+            finally:
+                self.train_model.train(was_training)
+        if self.distributed:
+            value = torch.tensor(validation_loss, device=self.device, dtype=torch.float64)
+            dist.broadcast(value, src=0)
+            validation_loss = float(value.item())
+        self.last_validation_step = self.step
+        return validation_loss
+
+    def maybe_save_best(self):
+        """Select and persist the current QuaSiD weights by validation model loss."""
+        loss = self.validate()
+        if loss is None:
+            return None
+        if self.logger is not None:
+            self.logger.add_scalar(tag="val/loss", scalar_value=loss, global_step=self.step)
+            self.logger.log_info(f"Validation loss at step {self.step}: {loss:.6f}")
+        if math.isfinite(loss) and loss < self.best_validation_loss:
+            self.best_validation_loss = loss
+            self.best_validation_step = self.step
+            self.save("best", verbose=True)
+            if self.is_main_process:
+                metadata = {"best_validation_loss": loss, "best_validation_step": self.step,
+                            "weights": "current_model"}
+                (self.ckpt_folder / "ckpt-best.json").write_text(json.dumps(metadata, indent=2) + "\n")
+            if self.logger is not None:
+                self.logger.log_info(f"Best validation loss: {loss:.6f} at step {self.step}")
+        return loss
+
     def train(self):
         """Run the main optimization loop with gradient accumulation, AMP, EMA, logging, and checkpoints."""
         data_iter = iter(self.dl)
@@ -260,7 +324,13 @@ class Trainer(object):
                     self.milestone += 1
                     self.save(self.milestone)
 
+                if self.validation_enabled and self.step % self.validation_interval == 0:
+                    self.maybe_save_best()
+
                 pbar.update(1)
+
+        if self.validation_enabled and self.last_validation_step != self.step:
+            self.maybe_save_best()
 
         if self.is_main_process:
             print('training complete')

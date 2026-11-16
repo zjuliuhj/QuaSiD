@@ -149,7 +149,48 @@ or embedding-generation service is bundled.
 
 ### Forecasting
 
-The forecasting loader accepts numeric NPY arrays shaped `[time, channels]` or `[series, time, channels]`. Set `history_length`, `pred_length`, `train_ratio`, and `val_ratio` in the data params. Each series is split along its time axis, and normalization is fitted on the training portion. Validation and test windows retain preceding history while keeping the predicted future inside the selected split. See [ForecastingDataset](data/dataset_utils/forecasting_dataset.py) for window boundaries.
+The forecasting loader accepts numeric NPY arrays shaped `[time, channels]` or
+`[series, time, channels]`. Set `history_length` and `pred_length`, then choose
+`train_ratio` / `val_ratio` or `split_lengths: [train, val, test]`. Explicit
+lengths take precedence and exclude any trailing data beyond their sum.
+ETTh1/ETTh2 use `[8640, 2880, 2880]`; ETTm1/ETTm2 use
+`[34560, 11520, 11520]`. Other bundled forecast configs use a 70/10/20 time split.
+Normalization is fitted only on the training time segment. Validation and test
+windows retain preceding history while their entire predicted future stays
+inside the selected split. See [ForecastingDataset](data/dataset_utils/forecasting_dataset.py).
+
+Forecast training builds a validation loader with ordered, complete batches.
+`solver.validation.enabled`, `interval`, and `max_batches` control validation;
+`max_batches: null` evaluates the full validation set. The bundled configs train
+for 18,000 optimizer steps, save and validate every 1,800 steps, and use training
+batch size 32 and validation/test batch size 64. A final validation runs if the
+last step was not already validated.
+
+Validation evaluates the **current model weights**, with sample-weighted mean
+model loss. It does not generate forecast ensembles or select by CRPS/MAE.
+A strictly lower finite validation loss replaces `ckpt-best.pt`;
+`ckpt-best.json` records the loss and selected step. The PT format remains
+exactly `step` and `model`, and evaluation loads those selected model weights.
+There is no early stopping; the learning-rate scheduler still uses training loss.
+
+Forecast launchers default to `MILESTONE=best`. The queue defaults to history 168
+and horizon 192; `national_illness` (and its `ili` alias) uses horizon 36, with
+separate configured NPY paths. It generates 20 paths per condition in chunks of
+4 and evaluates at most 20,000 uniformly selected test windows. Override these
+with `HISTORY_LENGTHS`, `PRED_LENGTHS`, `NATIONAL_ILLNESS_PRED_LENGTHS`,
+`FORECAST_SAMPLES`, `ENSEMBLE_CHUNK_SIZE`, and `FORECAST_EVAL_SAMPLE_LIMIT`.
+Each generated target contains history plus future; metrics use only the future
+in dataset-normalized space. The queue's length defaults override YAML lengths;
+`train_eval.sh` used directly retains YAML lengths unless `HISTORY`/`HORIZON` are set.
+
+```bash
+# Train and test the validation-best forecasting checkpoint.
+MODE=forecast DATASET=etth1 bash scripts/experiments/train_eval.sh
+
+# Evaluate an existing best checkpoint across generation seeds.
+MODE=forecast DATASET=etth1 RUN_TRAIN=false MILESTONE=best \
+  EVAL_SEEDS=2022,2023,2024 bash scripts/experiments/train_eval.sh
+```
 
 Set `model.params.seq_length = history_length + pred_length`. The launchers
 derive this automatically when `HISTORY` and `HORIZON` are selected. Frequency

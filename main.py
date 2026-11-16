@@ -7,6 +7,7 @@ from engine.solver import Trainer
 from data.build_dataloader import build_dataloader, build_dataloader_conditional, build_dataloader_forecasting
 from evaluation import build_evaluator
 from utils.runtime import (
+    checkpoint_milestone,
     instantiate_from_config,
     load_yaml_config,
     materialize_runtime_config,
@@ -83,7 +84,7 @@ def build_parser():
     parser.add_argument('--train', action='store_true', default=False, help='Train or Test.')
     parser.add_argument('--mode', type=str, default='uncond', choices=['uncond', 'cond', 'forecast'],
                         help='Generation mode: uncond, cond, or forecast.')
-    parser.add_argument('--milestone', type=int, default=5, help='Checkpoint number')
+    parser.add_argument('--milestone', type=checkpoint_milestone, default=5, help="Checkpoint number or 'best'")
     parser.add_argument('--eval_tag', type=str, default=None,
                         help='Optional single-directory label below eval/, e.g. milestone-3.')
 
@@ -189,6 +190,7 @@ def main():
     runtime_config = attach_runtime_device(runtime_config, args.device)
     model = instantiate_from_config(runtime_config['model']).to(torch.device(args.device))
 
+    val_dataloader_info = None
     if args.mode == 'uncond':
         dataloader_info = build_dataloader(runtime_config, args)
         test_dataloader_info = None
@@ -197,9 +199,12 @@ def main():
         test_dataloader_info = build_dataloader_conditional(runtime_config, args, period='test')
     elif args.mode == 'forecast':
         dataloader_info = build_dataloader_forecasting(runtime_config, args, period='train')
+        if args.train:
+            val_dataloader_info = build_dataloader_forecasting(runtime_config, args, period='val')
         test_dataloader_info = build_dataloader_forecasting(runtime_config, args, period='test')
 
-    trainer = Trainer(config=runtime_config, args=args, model=model, dataloader=dataloader_info, logger=logger)
+    trainer = Trainer(config=runtime_config, args=args, model=model, dataloader=dataloader_info, logger=logger,
+                      val_dataloader=val_dataloader_info)
 
     if args.train:
         trainer.train()

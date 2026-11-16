@@ -27,6 +27,7 @@ class ForecastingDataset(Dataset):
         normalization="zscore",
         condition_format="sequence",
         sample_limit=None,
+        split_lengths=None,
     ):
         super().__init__()
         if period not in {"train", "val", "test"}:
@@ -45,6 +46,7 @@ class ForecastingDataset(Dataset):
         self.stride = int(stride)
         self.train_ratio = float(train_ratio)
         self.val_ratio = float(val_ratio)
+        self.split_lengths = split_lengths
         self.period = period
         self.normalization = resolve_normalization(normalization)
         self.normalize_data = self.normalization != "none"
@@ -70,6 +72,13 @@ class ForecastingDataset(Dataset):
             raise ValueError("history_length and pred_length must be positive.")
         if self.stride <= 0:
             raise ValueError(f"stride must be positive, got {self.stride}.")
+        if self.split_lengths is not None:
+            if (len(self.split_lengths) != 3 or any(
+                isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value <= 0
+                for value in self.split_lengths
+            )):
+                raise ValueError("split_lengths must contain three positive integer train/val/test lengths.")
+            return
         if not 0.0 < self.train_ratio < 1.0:
             raise ValueError(f"train_ratio must be in (0, 1), got {self.train_ratio}.")
         if not 0.0 < self.val_ratio < 1.0:
@@ -80,8 +89,13 @@ class ForecastingDataset(Dataset):
                 f"got {self.train_ratio + self.val_ratio}."
             )
 
-    def _split_points(self, length):
-        """Return temporal split points `(train_end, val_end)` for a length-`T` series."""
+    def _split_bounds(self, length):
+        """Return temporal split bounds `(train_end, val_end, test_end)` for a length-`T` series."""
+        if self.split_lengths is not None:
+            train_end, val_end, test_end = np.cumsum(self.split_lengths).tolist()
+            if test_end > length:
+                raise ValueError(f"Explicit forecasting split {self.split_lengths} exceeds series length {length}.")
+            return train_end, val_end, test_end
         train_end = int(round(length * self.train_ratio))
         val_end = int(round(length * (self.train_ratio + self.val_ratio)))
         if not 0 < train_end < val_end < length:
@@ -89,15 +103,15 @@ class ForecastingDataset(Dataset):
                 f"Invalid forecasting split for length={length}: "
                 f"train_end={train_end}, val_end={val_end}."
             )
-        return train_end, val_end
+        return train_end, val_end, length
 
-    def _period_source(self, series, train_end, val_end):
+    def _period_source(self, series, train_end, val_end, test_end):
         """Select the current period, preserving history lookback at val/test boundaries."""
         if self.period == "train":
             return series[:train_end]
         if self.period == "val":
             return series[max(0, train_end - self.history_length):val_end]
-        return series[max(0, val_end - self.history_length):]
+        return series[max(0, val_end - self.history_length):test_end]
 
     def _normalize(self, data):
         """Apply the selected train-fitted scaler to BLC windows."""
@@ -129,10 +143,10 @@ class ForecastingDataset(Dataset):
         if rawdata.shape[1] != self.var_num:
             raise ValueError(f"Expected {self.var_num} channels, got {rawdata.shape[1]}.")
 
-        train_end, val_end = self._split_points(rawdata.shape[0])
+        train_end, val_end, test_end = self._split_bounds(rawdata.shape[0])
         if self.scaler is not None:
             self.scaler.fit(rawdata[:train_end].reshape(-1, self.var_num))
-        raw_contexts, raw_futures = self._make_windows(self._period_source(rawdata, train_end, val_end))
+        raw_contexts, raw_futures = self._make_windows(self._period_source(rawdata, train_end, val_end, test_end))
         return raw_contexts, raw_futures
 
     def _prepare_3d(self, rawdata):
@@ -140,13 +154,13 @@ class ForecastingDataset(Dataset):
         if rawdata.shape[2] != self.var_num:
             raise ValueError(f"Expected {self.var_num} channels, got {rawdata.shape[2]}.")
 
-        train_end, val_end = self._split_points(rawdata.shape[1])
+        train_end, val_end, test_end = self._split_bounds(rawdata.shape[1])
         if self.scaler is not None:
             self.scaler.fit(rawdata[:, :train_end, :].reshape(-1, self.var_num))
 
         contexts, futures = [], []
         for series in rawdata:
-            context, future = self._make_windows(self._period_source(series, train_end, val_end))
+            context, future = self._make_windows(self._period_source(series, train_end, val_end, test_end))
             contexts.append(context)
             futures.append(future)
         if not contexts:

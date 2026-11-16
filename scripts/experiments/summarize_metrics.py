@@ -42,7 +42,7 @@ METADATA_COLUMNS = {
 }
 
 
-def summarize_metrics(metrics_path: Path, experiment: str, milestone: int, seeds: list[int]) -> pd.DataFrame:
+def summarize_metrics(metrics_path: Path, experiment: str, milestone: int | str, seeds: list[int]) -> pd.DataFrame:
     """Return mean, sample variance, and sample standard deviation per metric."""
     if len(seeds) < 2:
         raise ValueError("At least two seeds are required to compute sample variance.")
@@ -57,11 +57,11 @@ def summarize_metrics(metrics_path: Path, experiment: str, milestone: int, seeds
         raise ValueError(f"{metrics_path} has no {missing} column. Re-run evaluation with seed recording enabled.")
 
     rows = rows.copy()
-    rows["milestone"] = pd.to_numeric(rows["milestone"], errors="coerce")
+    rows["milestone"] = rows["milestone"].astype(str)
     rows["seed"] = pd.to_numeric(rows["seed"], errors="coerce")
     selected = rows.loc[
         (rows["experiment"] == experiment)
-        & (rows["milestone"] == milestone)
+        & (rows["milestone"] == str(milestone))
         & (rows["seed"].isin(seeds))
     ].copy()
     selected = selected.drop_duplicates(subset="seed", keep="last")
@@ -100,7 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--metrics-path", type=Path, required=True, help="Path to the experiment metrics.csv.")
     parser.add_argument("--output", type=Path, required=True, help="CSV path for the metric summary.")
     parser.add_argument("--experiment", required=True, help="Experiment name to select.")
-    parser.add_argument("--milestone", type=int, required=True, help="Checkpoint milestone to select.")
+    parser.add_argument("--milestone", required=True, help="Checkpoint milestone to select.")
     parser.add_argument("--seeds", type=int, nargs="+", required=True, help="Exactly the evaluation seeds to summarize.")
     return parser.parse_args()
 

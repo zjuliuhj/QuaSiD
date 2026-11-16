@@ -1,6 +1,8 @@
 import argparse
 import sys
 
+from utils.runtime import checkpoint_milestone
+
 
 CONFIG_FOLDERS = {
     "uncond": "unconditional",
@@ -22,7 +24,7 @@ def build_task_parser(mode, description, default_num_samples=5):
     parser.add_argument("--ckpt-name", default=None, help="Checkpoint experiment name. Defaults to --experiment.")
     parser.add_argument("--config-file", default=None, help="Config path. Defaults to the task config folder.")
     parser.add_argument("--model-name", default="quasid_cont")
-    parser.add_argument("--milestone", type=int, default=5)
+    parser.add_argument("--milestone", type=checkpoint_milestone, default=5)
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument("--num-samples", type=int, default=default_num_samples)
     parser.add_argument("--eval-sample-limit", type=int, default=None)

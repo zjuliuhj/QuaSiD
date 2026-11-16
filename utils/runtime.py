@@ -98,6 +98,16 @@ def materialize_runtime_config(config, mode):
         model_params["condition_dim"] = forecast_condition_dim(dataset_params, model_params["condition_domain"])
     return runtime_config
 
+def checkpoint_milestone(value):
+    """Accept existing positive numeric checkpoint IDs and the validation-best ID."""
+    value = str(value)
+    if value == "best":
+        return value
+    if not value.isdecimal() or int(value) < 1:
+        raise ValueError("Checkpoint must be a positive integer or 'best'.")
+    return int(value)
+
+
 def validate_config(config, mode):
     """Validate shared YAML invariants, then apply target-specific model checks."""
     top_level = set(config)
@@ -140,16 +150,26 @@ def validate_config(config, mode):
 
     if "split_ratio" in dataset_params:
         raise ValueError("forecast dataloader.dataset.params uses train_ratio and val_ratio; split_ratio was removed.")
-    for ratio_name in ("train_ratio", "val_ratio"):
-        if ratio_name not in dataset_params:
-            raise ValueError(f"forecast dataloader.dataset.params.{ratio_name} is required.")
-    train_ratio = float(dataset_params["train_ratio"])
-    val_ratio = float(dataset_params["val_ratio"])
-    if not 0.0 < train_ratio < 1.0 or not 0.0 < val_ratio < 1.0 or train_ratio + val_ratio >= 1.0:
-        raise ValueError(
-            "forecast train_ratio and val_ratio must be positive and leave a non-empty test split; "
-            f"got train_ratio={train_ratio}, val_ratio={val_ratio}."
-        )
+    validation = config["solver"].get("validation", {})
+    if int(validation.get("interval", 1)) <= 0:
+        raise ValueError("solver.validation.interval must be positive.")
+    if validation.get("max_batches") is not None and int(validation["max_batches"]) <= 0:
+        raise ValueError("solver.validation.max_batches must be positive or null.")
+    split_lengths = dataset_params.get("split_lengths")
+    if split_lengths is not None:
+        if len(split_lengths) != 3 or any(type(value) is not int or value <= 0 for value in split_lengths):
+            raise ValueError("split_lengths must contain three positive integer train/val/test lengths.")
+    else:
+        for ratio_name in ("train_ratio", "val_ratio"):
+            if ratio_name not in dataset_params:
+                raise ValueError(f"forecast dataloader.dataset.params.{ratio_name} is required.")
+        train_ratio = float(dataset_params["train_ratio"])
+        val_ratio = float(dataset_params["val_ratio"])
+        if not 0.0 < train_ratio < 1.0 or not 0.0 < val_ratio < 1.0 or train_ratio + val_ratio >= 1.0:
+            raise ValueError(
+                "forecast train_ratio and val_ratio must be positive and leave a non-empty test split; "
+                f"got train_ratio={train_ratio}, val_ratio={val_ratio}."
+            )
 
     history_length = int(dataset_params["history_length"])
     pred_length = int(dataset_params["pred_length"])
