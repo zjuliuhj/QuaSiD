@@ -7,10 +7,10 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd)
 cd "${PROJECT_ROOT}"
 
-DATASETS=${DATASETS:-"etth1 etth2 ettm1 ettm2 weather be de exchange national_illness"}
+DATASETS=${DATASETS:-"etth1 etth2 ettm1 ettm2 weather be de exchange ili"}
 HISTORY_LENGTHS=${HISTORY_LENGTHS:-168}
 PRED_LENGTHS=${PRED_LENGTHS:-192}
-NATIONAL_ILLNESS_PRED_LENGTHS=${NATIONAL_ILLNESS_PRED_LENGTHS:-36}
+ILI_PRED_LENGTHS=${ILI_PRED_LENGTHS:-36}
 CONDITION_DOMAIN=${CONDITION_DOMAIN:-frequency}
 MODEL_NAME=${MODEL_NAME:-quasid_cont}
 BACKBONE=${BACKBONE:-dit_solver_v5}
@@ -37,8 +37,8 @@ for dataset in ${DATASETS}; do
     continue
   fi
   history_lengths=${HISTORY_LENGTHS:-$(awk '$1 == "history_length:" {print $2; exit}' "${config_file}")}
-  if [[ "${dataset}" == "ili" || "${dataset}" == "national_illness" ]]; then
-    pred_lengths=${NATIONAL_ILLNESS_PRED_LENGTHS}
+  if [[ "${dataset}" == "ili" ]]; then
+    pred_lengths=${ILI_PRED_LENGTHS}
   else
     pred_lengths=${PRED_LENGTHS}
   fi

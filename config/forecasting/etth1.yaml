@@ -1,7 +1,7 @@
 model:
   target: models.quasid.quasid_cont.QuaSiD_cont
   params:
-    seq_length: 224
+    seq_length: 360
     channels: 7
     condition_domain: frequency
     max_step: 500
@@ -49,8 +49,8 @@ dataloader:
     target: data.dataset_utils.forecasting_dataset.ForecastingDataset
     params:
       data_root: ./data/datasets/etth1.npy
-      history_length: 96
-      pred_length: 128
+      history_length: 168
+      pred_length: 192
       channels: 7
       stride: 1
       split_lengths: [8640, 2880, 2880]

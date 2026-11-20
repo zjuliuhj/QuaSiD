@@ -59,7 +59,7 @@ python -m pip install -r requirements.txt
 ```
 
 Install a PyTorch build compatible with your machine and CUDA driver. Runtime
-dependencies and the test runner are listed together in `requirements.txt`.
+dependencies are listed in `requirements.txt`.
 No TensorFlow installation or separate FlashAttention package is needed.
 
 The experiment shell launchers require Bash 4 or newer because they use associative arrays. Use a compatible Bash on macOS, where the system Bash may be older. GPU queues require NVIDIA GPUs and `nvidia-smi`; the CPU smoke check runs directly through Python.
@@ -73,7 +73,6 @@ the trainer disables mixed precision in that case.
 ## Quick check without downloading data
 
 ```bash
-python -m pytest -q
 python scripts/smoke_v5.py
 ```
 
@@ -81,10 +80,10 @@ The smoke check uses temporary sine data on CPU, trains tiny QuaSiD models with 
 
 ## Data
 
-The repository includes 11 NPY datasets in `data/datasets/`: `Quito`, `air`,
-`be`, `de`, `etth1`, `etth2`, `ettm1`, `ettm2`, `exchange`, `stocks`, and `weather`.
-Synthetic sine data are generated in memory by the loader and need no dataset
-download. Configurations for other datasets require you to provide their files.
+NPY datasets are not included in this repository. Place the required files in
+`data/datasets/` or update `dataloader.dataset.params.data_root` in the selected
+configuration. Synthetic sine data are generated in memory by the loader and
+need no dataset download.
 
 Configurations are organized by task:
 
@@ -194,10 +193,10 @@ and stop with a message. Use a new `EXP_NAME` for fresh training or
 not supported by the current checkpoint format.
 
 Forecast launchers default to `MILESTONE=best`. The queue defaults to history 168
-and horizon 192; `national_illness` (and its `ili` alias) uses horizon 36, with
-separate configured NPY paths. It generates 20 paths per condition in chunks of
+and horizon 192; `ili` uses horizon 36 and reads `data/datasets/ili.npy`.
+It generates 20 paths per condition in chunks of
 4 and evaluates at most 20,000 uniformly selected test windows. Override these
-with `HISTORY_LENGTHS`, `PRED_LENGTHS`, `NATIONAL_ILLNESS_PRED_LENGTHS`,
+with `HISTORY_LENGTHS`, `PRED_LENGTHS`, `ILI_PRED_LENGTHS`,
 `FORECAST_SAMPLES`, `ENSEMBLE_CHUNK_SIZE`, and `FORECAST_EVAL_SAMPLE_LIMIT`.
 Each generated target contains history plus future; metrics use only the future
 in dataset-normalized space. The queue's length defaults override YAML lengths;
@@ -248,7 +247,7 @@ python main.py --train --name Quito_quasid --mode uncond \
 MODE=cond DATASET=etth1 RUN_EVAL=false \
   bash scripts/experiments/train_eval.sh
 
-# Forecasting uses the bundled data/datasets/etth1.npy.
+# Forecasting requires data/datasets/etth1.npy to be provided locally.
 MODE=forecast DATASET=etth1 RUN_EVAL=false \
   bash scripts/experiments/train_eval.sh
 ```
@@ -334,7 +333,6 @@ evaluation/                Task evaluation and metrics output
 utils/                     Metrics, EMA, visualization, runtime utilities
 scripts/data/              Optional data conversion and sine generation tools
 scripts/experiments/       GPU queues, train/evaluate launchers, metric summaries
-tests/                     Model, EMA, sine-loader, and metric-space checks
 ```
 
 Outputs go to `experiments/<mode>/<model_name>/<dataset>/<experiment>/`, including
@@ -347,7 +345,7 @@ For SSH setup, reuse in future projects, and authentication troubleshooting, see
 
 ## Source release and validation
 
-This repository contains the QuaSiD model, training and evaluation code, task configurations, and the 11 NPY datasets listed above. Checkpoints, logs, and local authentication credentials are excluded.
+This repository contains the QuaSiD model, training and evaluation code, and task configurations. Tests, NPY datasets, checkpoints, logs, and local authentication credentials are excluded.
 
 Historical validation of the blockwise-only release included:
 
@@ -356,4 +354,4 @@ Historical validation of the blockwise-only release included:
 - Schema validation and model-target imports for all 25 YAML configurations.
 - Shell syntax checks for the experiment launchers.
 
-These historical checks ran in the existing `rycai` conda environment with Python 3.11.15, PyTorch 2.12.1, and NumPy 2.4.6. That environment's NumPy version is outside the installation range in `requirements.txt`. They do not validate a fresh dependency installation. The focused checks for blockwise PMI and both diffusion wrappers are in `tests/test_quasid_v5.py`; run them in the target environment before launching experiments.
+These historical checks ran in the existing `rycai` conda environment with Python 3.11.15, PyTorch 2.12.1, and NumPy 2.4.6. That environment's NumPy version is outside the installation range in `requirements.txt`. They do not validate a fresh dependency installation. Test files are maintained locally and are not distributed in this source release. Run `python scripts/smoke_v5.py` in the target environment before launching experiments.

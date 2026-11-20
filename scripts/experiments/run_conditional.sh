@@ -7,7 +7,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_ROOT=$(cd -- "${SCRIPT_DIR}/../.." && pwd)
 cd "${PROJECT_ROOT}"
 
-DATASETS=${DATASETS:-"air electricity ettm1"}
+DATASETS=${DATASETS:-"air electricity ettm1 etth1 exchange traffic"}
 SEQ_LENGTHS=${SEQ_LENGTHS:-"24 48 96"}
 MODEL_NAME=${MODEL_NAME:-"quasid_cont quasid_disc"}
 BACKBONE=${BACKBONE:-dit_solver_v5}
